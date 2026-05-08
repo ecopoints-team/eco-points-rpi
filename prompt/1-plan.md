@@ -19,4 +19,3 @@ This is the task that needs to be solved:
 - Always make an implementation plan on an artifact first, so the developer can review the plan first.
 
 # Main Task / Minor Changes
-- add tap anywhere to start text on the bottom of the idle screen
