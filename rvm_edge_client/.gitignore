@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables (Secrets like API Keys, Machine IDs)
+.env
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Temporary runtime files / local images
+temp/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+
+# Model weights 
+# Note: GitHub has a 100MB file limit. yolov8s.pt is ~22MB so it can be committed.
+# Uncomment the line below if you prefer NOT to track model weights in git:
+# models/*.pt
+
+# OS generated files
+.DS_Store
+Thumbs.db
