@@ -11,6 +11,7 @@ import BackgroundGlow from '../components/BackgroundGlow';
 import LogoHeader from '../components/LogoHeader';
 import { useKiosk } from '../context/KioskContext';
 import { getVerificationResult } from '../api/kioskApi';
+import { DEV_MODE } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
 export default function VerifyingScreen() {
@@ -24,19 +25,21 @@ export default function VerifyingScreen() {
       false
     );
 
-    getVerificationResult().then((res) => {
-      if (res.accepted) {
-        dispatch({
-          type: 'VERIFY_SUCCESS',
-          payload: { points: res.points, bottleCount: res.bottleCount },
-        });
-      } else {
-        dispatch({
-          type: 'VERIFY_FAIL',
-          payload: { reason: res.reason ?? 'Unknown error' },
-        });
-      }
-    });
+    if (DEV_MODE) {
+      getVerificationResult().then((res) => {
+        if (res.accepted) {
+          dispatch({
+            type: 'VERIFY_SUCCESS',
+            payload: { points: res.points, bottleCount: res.bottleCount },
+          });
+        } else {
+          dispatch({
+            type: 'VERIFY_FAIL',
+            payload: { reason: res.reason ?? 'Unknown error' },
+          });
+        }
+      });
+    }
   }, []);
 
   const spinStyle = useAnimatedStyle(() => ({

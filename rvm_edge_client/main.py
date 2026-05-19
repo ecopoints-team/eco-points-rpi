@@ -8,6 +8,7 @@ import json
 import asyncio
 import threading
 import websockets
+import queue
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,6 +32,7 @@ class UIBridge:
         self.host = host
         self.port = port
         self.clients = set()
+        self.queue = queue.Queue()
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_server, daemon=True)
 
@@ -46,9 +48,31 @@ class UIBridge:
     async def _handler(self, websocket):
         self.clients.add(websocket)
         try:
-            await websocket.wait_closed()
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    self.queue.put(data)
+                except json.JSONDecodeError:
+                    self.queue.put({"action": message})
+        except websockets.exceptions.ConnectionClosed:
+            pass
         finally:
             self.clients.discard(websocket)
+
+    def get_message(self, timeout=None):
+        """Reads the next message from the queue with an optional timeout."""
+        try:
+            return self.queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def clear_queue(self):
+        """Discards all pending messages in the queue."""
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except queue.Empty:
+                break
 
     def broadcast(self, event_type, data=None):
         """Sends an event to all connected UI clients."""
@@ -147,7 +171,15 @@ def run_ecopoints_firmware():
             continue  # Restart loop
 
         hw.display_ui("Press Start Button", "GO_IDLE")
-        input("   >>> [BUTTON INPUT] Press ENTER to simulate Start Button click...")
+        ui_bridge.clear_queue()
+        if not ui_bridge.clients:
+            input("   >>> [BUTTON INPUT] Press ENTER to simulate Start Button click...")
+        else:
+            hw.log("SYS", "Waiting for WAKE event (touchscreen tap)...")
+            while True:
+                msg = ui_bridge.get_message(timeout=0.5)
+                if msg and msg.get("action") == "WAKE":
+                    break
         ui_bridge.broadcast("WAKE")
 
         # --- STATE: QR SCANNING ---
@@ -157,22 +189,37 @@ def run_ecopoints_firmware():
         qr_flow_complete = False
         session_id = None
         while not qr_flow_complete:
-            # Simulate waiting for scan
-            time.sleep(1)
-            is_scanned = hw.read_sensor_override("Camera", "Did the user SCAN the QR?")
+            scanned_qr_data = None
+            if not ui_bridge.clients:
+                # Simulate waiting for scan
+                time.sleep(1)
+                is_scanned = hw.read_sensor_override("Camera", "Did the user SCAN the QR?")
 
-            if not is_scanned:
-                hw.log("TIMER", "Timeout reached (120s).")
-                hw.log("SYS", "Resetting session...")
-                qr_flow_complete = "TIMEOUT"
-                break
+                if not is_scanned:
+                    hw.log("TIMER", "Timeout reached (120s).")
+                    hw.log("SYS", "Resetting session...")
+                    qr_flow_complete = "TIMEOUT"
+                    break
+                
+                # Simulate user input
+                scanned_qr_data = input("   >>> [SCAN SIMULATION] Enter user ID (or press enter for dummy_user): ").strip()
+                if not scanned_qr_data: scanned_qr_data = "dummy_user_123"
+            else:
+                hw.log("SYS", "Waiting for QR code scan from Kiosk UI...")
+                while True:
+                    msg = ui_bridge.get_message(timeout=0.5)
+                    if msg:
+                        if msg.get("action") == "CANCEL":
+                            qr_flow_complete = "TIMEOUT"
+                            break
+                        elif msg.get("action") == "QR_SCANNED":
+                            scanned_qr_data = msg.get("qr_data")
+                            break
+                if qr_flow_complete == "TIMEOUT" or not scanned_qr_data:
+                    break
 
             hw.log("API", f"Verifying QR Token with server at {BACKEND_URL}...")
             try:
-                # In real life, camera reads this. For now, simulate user input or hardcode.
-                scanned_qr_data = input("   >>> [SCAN SIMULATION] Enter user ID (or press enter for dummy_user): ").strip()
-                if not scanned_qr_data: scanned_qr_data = "dummy_user_123"
-                
                 response = requests.post(f"{BACKEND_URL}/api/rpi/session/start", json={
                     "user_qr": scanned_qr_data,
                     "machine_uuid": MACHINE_ID
@@ -220,6 +267,7 @@ def run_ecopoints_firmware():
                     hw.log("WARN", f"GPIO_{PIN_DOOR_SENSOR} State: OPEN")
                 else:
                     hw.log("INFO", f"GPIO_{PIN_DOOR_SENSOR} State: CLOSED")
+                    hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
                     hw.log("MECH", "Locking Safety Door...")
                     break
 
@@ -251,7 +299,23 @@ def run_ecopoints_firmware():
                     hw.display_ui("Please remove invalid item")
 
                     hw.log("MECH", "Unlocking door for removal...")
-                    input("   >>> [USER ACTION] Press ENTER once you have removed the item...")
+                    if not ui_bridge.clients:
+                        input("   >>> [USER ACTION] Press ENTER once you have removed the item...")
+                    else:
+                        hw.log("SYS", "Waiting for user action on Kiosk UI...")
+                        user_wants_retry = None
+                        while True:
+                            msg = ui_bridge.get_message(timeout=0.5)
+                            if msg:
+                                if msg.get("action") == "REPEAT_READY":
+                                    user_wants_retry = True
+                                    break
+                                elif msg.get("action") == "FINISH":
+                                    user_wants_retry = False
+                                    break
+                        if not user_wants_retry:
+                            transacting = False
+                            break
                     hw.log("MECH", "Door Locked. Retrying scan...")
                 else:
                     hw.log("INFO", "Object Classification: PET BOTTLE (Accepted)")
@@ -283,7 +347,20 @@ def run_ecopoints_firmware():
 
             # --- TRANSACT ANOTHER? ---
             hw.log("SYS", "Waiting for user decision...")
-            again = hw.read_sensor_override("Touchscreen", "Does user press 'Transact Another'?")
+            if not ui_bridge.clients:
+                again = hw.read_sensor_override("Touchscreen", "Does user press 'Transact Another'?")
+            else:
+                hw.log("SYS", "Waiting for user selection on Kiosk UI...")
+                again = None
+                while True:
+                    msg = ui_bridge.get_message(timeout=0.5)
+                    if msg:
+                        if msg.get("action") == "REPEAT_READY":
+                            again = True
+                            break
+                        elif msg.get("action") == "FINISH":
+                            again = False
+                            break
 
             if again:
                 hw.log("SYS", "Looping transaction...")

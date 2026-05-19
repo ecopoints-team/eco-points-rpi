@@ -1,8 +1,8 @@
 # RVM Edge Client Integration Guide
 
-This guide outlines how the `rvm_edge_client` communicates with the Eco-Points Flask Backend.
+This guide outlines how the `rvm_edge_client` communicates with the Eco-Points Flask Backend and the React Kiosk UI.
 
-## Overview
+## HTTP Backend Overview
 The edge client simulates a Reverse Vending Machine (RVM) and interacts with the backend over HTTP. The backend controller (`rpi_controller.py`) exposes three primary endpoints under the `/api/rpi` prefix to handle machine operations.
 
 ### Base URL
@@ -82,6 +82,34 @@ Called when the user finishes depositing items. Commits the session and credits 
   }
   ```
 
+---
+
+## WebSocket Kiosk UI Bridge
+The python daemon (`main.py`) hosts a WebSocket server at `ws://localhost:8765` to drive the React Native (web) Kiosk interface.
+
+### A. Python Daemon to React UI (Broadcasts)
+* **`GO_IDLE`**: Transitions UI to Idle Screen (waiting for user).
+* **`WAKE`**: Transitions UI to QR Scan Screen.
+* **`LOGIN_SUCCESS`**: Transitions UI to Ready Screen. Payload: `{"userName": "name"}`.
+* **`LOGIN_DENIED`**: Transitions UI to Denied Screen (invalid QR).
+* **`SET_DOOR_OPEN`**: Transitions UI to Door Open Screen.
+* **`DOOR_CLOSED`**: Transitions UI back to Verifying Screen.
+* **`BOTTLE_INSERTED`**: Transitions UI to Verifying/Processing Screen.
+* **`VERIFY_SUCCESS`**: Transitions UI to Accepted Screen. Payload: `{"points": 10, "bottleCount": 1}`.
+* **`VERIFY_FAIL`**: Transitions UI to Rejected Screen. Payload: `{"reason": "detail"}`.
+* **`ADVANCE_THANK_YOU`**: Transitions UI to Thank You Screen.
+* **`SET_BIN_FULL`**: Transitions UI to Bin Full Screen.
+* **`SYSTEM_CLEAR`**: Resets UI state machine to Start Screen.
+
+### B. React UI to Python Daemon (Control inputs)
+* **`{"action": "WAKE"}`**: Sent when user taps Idle screen to wake up the system.
+* **`{"action": "QR_SCANNED", "qr_data": "<token>"}`**: Sent when the React camera scans the QR code.
+* **`{"action": "CANCEL"}`**: Sent when the user cancels scanning.
+* **`{"action": "REPEAT_READY"}`**: Sent when user taps "Transact again" / "Try Again".
+* **`{"action": "FINISH"}`**: Sent when user taps "Finish" / "End Transaction".
+
+---
+
 ## Environment Setup
 In your `rvm_edge_client` directory, ensure your `.env` file matches your backend server configuration:
 ```env
@@ -89,3 +117,4 @@ BACKEND_URL=http://127.0.0.1:5000
 MACHINE_ID=RVM-MAIN-001
 LOCATION=Institute of Technology
 ```
+

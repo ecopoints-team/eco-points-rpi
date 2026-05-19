@@ -6,6 +6,7 @@ import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
 import { useKiosk } from '../context/KioskContext';
 import { loginWithQR } from '../api/kioskApi';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
 export default function QRScanScreen() {
@@ -19,11 +20,15 @@ export default function QRScanScreen() {
     scanned.current = true;
     setScanning(false);
 
-    const result = await loginWithQR(data);
-    if (result.success) {
-      dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: result.userName } });
+    if (DEV_MODE) {
+      const result = await loginWithQR(data);
+      if (result.success) {
+        dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: result.userName } });
+      } else {
+        dispatch({ type: 'LOGIN_DENIED' });
+      }
     } else {
-      dispatch({ type: 'LOGIN_DENIED' });
+      sendGPIOEvent({ action: 'QR_SCANNED', qr_data: data });
     }
   };
 
@@ -59,7 +64,12 @@ export default function QRScanScreen() {
       <GlowButton
         label="Cancel"
         variant="outline"
-        onPress={() => dispatch({ type: 'SYSTEM_CLEAR' })}
+        onPress={() => {
+          dispatch({ type: 'SYSTEM_CLEAR' });
+          if (!DEV_MODE) {
+            sendGPIOEvent({ action: 'CANCEL' });
+          }
+        }}
       />
     </BackgroundGlow>
   );

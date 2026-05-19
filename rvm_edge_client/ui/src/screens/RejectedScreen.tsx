@@ -5,6 +5,7 @@ import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
 import StatusBadge from '../components/StatusBadge';
 import { useKiosk } from '../context/KioskContext';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
 export default function RejectedScreen() {
@@ -21,13 +22,23 @@ export default function RejectedScreen() {
       <View style={styles.buttonRow}>
         <GlowButton
           label="Try Again"
-          onPress={() => dispatch({ type: 'REPEAT_READY' })}
+          onPress={() => {
+            dispatch({ type: 'REPEAT_READY' });
+            if (!DEV_MODE) {
+              sendGPIOEvent({ action: 'REPEAT_READY' });
+            }
+          }}
           style={styles.btn}
         />
         <GlowButton
           label="End Transaction"
           variant="outline"
-          onPress={() => dispatch({ type: 'ADVANCE_THANK_YOU' })}
+          onPress={() => {
+            dispatch({ type: 'ADVANCE_THANK_YOU' });
+            if (!DEV_MODE) {
+              sendGPIOEvent({ action: 'FINISH' });
+            }
+          }}
           style={styles.btn}
         />
       </View>
