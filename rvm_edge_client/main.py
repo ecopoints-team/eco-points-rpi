@@ -4,6 +4,10 @@ import random
 from datetime import datetime
 import os
 import requests
+import json
+import asyncio
+import threading
+import websockets
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +23,53 @@ PIN_STORAGE_LEVEL = 29
 # PIN PWM = 11
 # PIN DIRECTION = 12
 # PIN InProgressIndicator = 15
+
+# --- UI BRIDGE ---
+class UIBridge:
+    """Manages WebSocket communication with the Kiosk UI."""
+    def __init__(self, host="0.0.0.0", port=8765):
+        self.host = host
+        self.port = port
+        self.clients = set()
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self._run_server, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def _run_server(self):
+        asyncio.set_event_loop(self.loop)
+        start_server = websockets.serve(self._handler, self.host, self.port)
+        self.loop.run_until_complete(start_server)
+        self.loop.run_forever()
+
+    async def _handler(self, websocket):
+        self.clients.add(websocket)
+        try:
+            await websocket.wait_closed()
+        finally:
+            self.clients.discard(websocket)
+
+    def broadcast(self, event_type, data=None):
+        """Sends an event to all connected UI clients."""
+        if not self.clients:
+            return
+        
+        message = {"event": event_type}
+        if data:
+            message.update(data)
+            
+        payload = json.dumps(message)
+        # Schedule the send on the event loop thread
+        for client in self.clients:
+            self.loop.call_soon_threadsafe(
+                asyncio.run_coroutine_threadsafe, 
+                client.send(payload), 
+                self.loop
+            )
+
+ui_bridge = UIBridge()
+ui_bridge.start()
 
 
 
@@ -61,9 +112,11 @@ class HardwareInterface:
             else:
                 print("   >>> ERROR: Invalid Signal. Input 1 or 0.")
 
-    def display_ui(self, text):
-        """Simulates sending text to the LCD screen."""
+    def display_ui(self, text, event=None, data=None):
+        """Simulates sending text to the LCD screen and broadcasts to WebSocket."""
         print(f"\n[LCD DISPLAY] >> \"{text}\"\n")
+        if event:
+            ui_bridge.broadcast(event, data)
 
     def spin_motor(self, duration=1):
         self.log("MOTOR", "Actuator active...")
@@ -88,13 +141,14 @@ def run_ecopoints_firmware():
         is_full = hw.read_sensor_override("Storage Sensor", "Is the bin FULL?")
 
         if is_full:
-            hw.display_ui("Sorry, machine is currently full. Please try again later.")
+            hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
             hw.log("SYS", "Error: Capacity Reached. Entering sleep mode for 5s.")
             time.sleep(5)
             continue  # Restart loop
 
-        hw.display_ui("Press Start Button")
+        hw.display_ui("Press Start Button", "GO_IDLE")
         input("   >>> [BUTTON INPUT] Press ENTER to simulate Start Button click...")
+        ui_bridge.broadcast("WAKE")
 
         # --- STATE: QR SCANNING ---
         hw.display_ui("Showing QR Code...")
@@ -130,8 +184,10 @@ def run_ecopoints_firmware():
                     session_id = session_data.get("session", {}).get("session_id")
                     account_name = session_data.get("account", {}).get("name", "Unknown")
                     hw.log("API", f"User {account_name} authenticated. Session {session_id} started.")
+                    ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
                 else:
                     is_valid = False
+                    ui_bridge.broadcast("LOGIN_DENIED")
             except requests.exceptions.RequestException as e:
                 hw.log("API_ERROR", f"Could not connect to backend: {e}")
                 is_valid = False
@@ -151,7 +207,7 @@ def run_ecopoints_firmware():
         transacting = True
 
         while transacting:
-            hw.display_ui("Please insert bottles in place")
+            hw.display_ui("Please insert bottles in place", "READY")
             hw.log("MECH", "Unlocking Safety Door...")
             hw.log("MECH", "Door Unlocked.")
 
@@ -160,7 +216,7 @@ def run_ecopoints_firmware():
                 # Simulating a magnetic reed switch on the door
                 is_closed = hw.read_sensor_override("Door Sensor", "Is the door CLOSED?")
                 if not is_closed:
-                    hw.display_ui("Door Open. Please close the door to proceed.")
+                    hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
                     hw.log("WARN", f"GPIO_{PIN_DOOR_SENSOR} State: OPEN")
                 else:
                     hw.log("INFO", f"GPIO_{PIN_DOOR_SENSOR} State: CLOSED")
@@ -179,7 +235,7 @@ def run_ecopoints_firmware():
 
             # --- VERIFICATION ---
             hw.log("PROC", "Verifying Objects...")
-            hw.display_ui("Processing...")
+            hw.display_ui("Processing...", "BOTTLE_INSERTED")
             hw.spin_motor(duration=1.5)  # Simulate conveyor/scanner moving
 
             # --- VALIDITY CHECK LOOP ---
@@ -191,7 +247,7 @@ def run_ecopoints_firmware():
 
                 if not bottles_valid:
                     hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
-                    hw.display_ui("Transaction Denied: Invalid Item Detected")
+                    hw.display_ui("Transaction Denied: Invalid Item Detected", "VERIFY_FAIL", {"reason": "Non-recyclable material detected."})
                     hw.display_ui("Please remove invalid item")
 
                     hw.log("MECH", "Unlocking door for removal...")
@@ -222,7 +278,7 @@ def run_ecopoints_firmware():
                     hw.log("DB", "Failed to sync points. Saving to local cache.")
             except Exception as e:
                 hw.log("API_ERROR", "Server unreachable.")
-            hw.display_ui(f"Transaction Successful + {points} Points!")
+            hw.display_ui(f"Transaction Successful + {points} Points!", "VERIFY_SUCCESS", {"points": points, "bottleCount": 1})
             hw.display_ui(f"Your Total Points : {user_total_points} pts")
 
             # --- TRANSACT ANOTHER? ---
@@ -252,7 +308,7 @@ def run_ecopoints_firmware():
                 except Exception as e:
                     hw.log("API_ERROR", f"Failed to end session: {e}")
             hw.log("SYS", "Session Finalized.")
-            hw.display_ui("Thank you for using EcoPoints.")
+            hw.display_ui("Thank you for using EcoPoints.", "ADVANCE_THANK_YOU")
 
             # Reset local variables
             user_total_points = 0
