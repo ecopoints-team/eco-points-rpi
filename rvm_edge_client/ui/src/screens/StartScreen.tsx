@@ -13,6 +13,7 @@ import HexGridPattern from '../components/HexGridPattern';
 import FloatingEcoIcons from '../components/FloatingEcoIcons';
 import { useKiosk } from '../context/KioskContext';
 import { Colors, Fonts, FontSizes, Spacing, scale, vscale } from '../constants/theme';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 
 export default function StartScreen() {
   const { dispatch } = useKiosk();
@@ -38,7 +39,12 @@ export default function StartScreen() {
     <TouchableOpacity
       style={{ flex: 1 }}
       activeOpacity={1}
-      onPress={() => dispatch({ type: 'WAKE' })}
+      onPress={() => {
+        dispatch({ type: 'WAKE' });
+        if (!DEV_MODE) {
+          sendGPIOEvent({ action: 'WAKE' });
+        }
+      }}
     >
       <LinearGradient
         colors={[Colors.bg, Colors.bgTint, '#ECFDF5']}

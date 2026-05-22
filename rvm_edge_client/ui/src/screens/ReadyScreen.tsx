@@ -4,6 +4,7 @@ import BackgroundGlow from '../components/BackgroundGlow';
 import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
 import { useKiosk } from '../context/KioskContext';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
 export default function ReadyScreen() {
@@ -25,13 +26,23 @@ export default function ReadyScreen() {
       {/* Dev/prototype manual trigger */}
       <GlowButton
         label="Simulate: Bottle Inserted"
-        onPress={() => dispatch({ type: 'BOTTLE_INSERTED' })}
+        onPress={() => {
+          dispatch({ type: 'BOTTLE_INSERTED' });
+          if (!DEV_MODE) {
+            sendGPIOEvent({ action: 'BOTTLE_INSERTED' });
+          }
+        }}
         style={styles.btn}
       />
       <GlowButton
         label="Cancel"
         variant="outline"
-        onPress={() => dispatch({ type: 'SYSTEM_CLEAR' })}
+        onPress={() => {
+          dispatch({ type: 'SYSTEM_CLEAR' });
+          if (!DEV_MODE) {
+            sendGPIOEvent({ action: 'CANCEL' });
+          }
+        }}
         style={styles.btn}
       />
     </BackgroundGlow>

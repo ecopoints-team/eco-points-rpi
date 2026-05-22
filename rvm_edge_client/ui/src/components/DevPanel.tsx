@@ -33,61 +33,84 @@ const MOCK_PAYLOAD = {
 
 export default function DevPanel() {
   const { screen: current, dispatch } = useKiosk();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <TouchableOpacity
+        style={styles.hoverTarget}
+        onPress={() => setOpen(true)}
+        // @ts-ignore
+        onMouseEnter={() => setOpen(true)}
+        activeOpacity={1}
+      />
+    );
+  }
 
   return (
-    <View style={styles.wrapper} pointerEvents="box-none">
+    <View 
+      style={styles.wrapper} 
+      pointerEvents="box-none"
+      // @ts-ignore
+      onMouseLeave={() => setOpen(false)}
+    >
       {/* Toggle tab */}
-      <TouchableOpacity style={styles.tab} onPress={() => setOpen((o) => !o)}>
-        <Text style={styles.tabText}>{open ? '▲ DEV' : '▼ DEV'}</Text>
+      <TouchableOpacity style={styles.tab} onPress={() => setOpen(false)}>
+        <Text style={styles.tabText}>▼ DEV (Leave or tap to hide)</Text>
       </TouchableOpacity>
 
-      {open && (
-        <ScrollView
-          horizontal
-          style={styles.panel}
-          contentContainerStyle={styles.row}
-          showsHorizontalScrollIndicator={false}
-        >
-          {SCREENS.map(({ label, screen }) => (
-            <TouchableOpacity
-              key={screen}
-              style={[styles.btn, current === screen && styles.btnActive]}
-              onPress={() => {
-                // Inject mock payload then jump to state
-                if (screen === 'READY' || screen === 'VERIFYING') {
-                  dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: MOCK_PAYLOAD.userName } });
-                }
-                if (screen === 'ACCEPTED') {
-                  dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: MOCK_PAYLOAD.userName } });
-                  dispatch({ type: 'VERIFY_SUCCESS', payload: { points: MOCK_PAYLOAD.points, bottleCount: MOCK_PAYLOAD.bottleCount } });
-                  return;
-                }
-                if (screen === 'REJECTED') {
-                  dispatch({ type: 'VERIFY_FAIL', payload: { reason: MOCK_PAYLOAD.reason } });
-                  return;
-                }
-                if (screen === 'DENIED')   { dispatch({ type: 'LOGIN_DENIED' }); return; }
-                if (screen === 'BIN_FULL') { dispatch({ type: 'SET_BIN_FULL' }); return; }
-                if (screen === 'DOOR_OPEN'){ dispatch({ type: 'SET_DOOR_OPEN' }); return; }
-                if (screen === 'IDLE')     { dispatch({ type: 'GO_IDLE' }); return; }
-                if (screen === 'START')    { dispatch({ type: 'SYSTEM_CLEAR' }); return; }
-                if (screen === 'THANK_YOU'){ dispatch({ type: 'ADVANCE_THANK_YOU' }); return; }
-                if (screen === 'QR_SCAN')  { dispatch({ type: 'WAKE' }); return; }
-              }}
-            >
-              <Text style={[styles.btnText, current === screen && styles.btnTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
+      <ScrollView
+        horizontal
+        style={styles.panel}
+        contentContainerStyle={styles.row}
+        showsHorizontalScrollIndicator={false}
+      >
+        {SCREENS.map(({ label, screen }) => (
+          <TouchableOpacity
+            key={screen}
+            style={[styles.btn, current === screen && styles.btnActive]}
+            onPress={() => {
+              // Inject mock payload then jump to state
+              if (screen === 'READY' || screen === 'VERIFYING') {
+                dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: MOCK_PAYLOAD.userName } });
+              }
+              if (screen === 'ACCEPTED') {
+                dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: MOCK_PAYLOAD.userName } });
+                dispatch({ type: 'VERIFY_SUCCESS', payload: { points: MOCK_PAYLOAD.points, bottleCount: MOCK_PAYLOAD.bottleCount } });
+                return;
+              }
+              if (screen === 'REJECTED') {
+                dispatch({ type: 'VERIFY_FAIL', payload: { reason: MOCK_PAYLOAD.reason } });
+                return;
+              }
+              if (screen === 'DENIED')   { dispatch({ type: 'LOGIN_DENIED' }); return; }
+              if (screen === 'BIN_FULL') { dispatch({ type: 'SET_BIN_FULL' }); return; }
+              if (screen === 'DOOR_OPEN'){ dispatch({ type: 'SET_DOOR_OPEN' }); return; }
+              if (screen === 'IDLE')     { dispatch({ type: 'GO_IDLE' }); return; }
+              if (screen === 'START')    { dispatch({ type: 'SYSTEM_CLEAR' }); return; }
+              if (screen === 'THANK_YOU'){ dispatch({ type: 'ADVANCE_THANK_YOU' }); return; }
+              if (screen === 'QR_SCAN')  { dispatch({ type: 'WAKE' }); return; }
+            }}
+          >
+            <Text style={[styles.btnText, current === screen && styles.btnTextActive]}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  hoverTarget: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: 60,
+    height: 60,
+    zIndex: 9999,
+  },
   wrapper: {
     position: 'absolute',
     bottom: 0,
