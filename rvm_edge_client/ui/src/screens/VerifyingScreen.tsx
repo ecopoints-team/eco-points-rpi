@@ -85,8 +85,8 @@ export default function VerifyingScreen() {
       </View>
 
       <View style={styles.textContainer}>
-        <Text style={styles.title}>Verifying your items…</Text>
-        <Text style={styles.subtitle}>Our AI is analyzing the deposit</Text>
+        <Text style={styles.title}>Verifying your bottles…</Text>
+        <Text style={styles.subtitle}>Please wait a moment</Text>
       </View>
     </BackgroundGlow>
   );
