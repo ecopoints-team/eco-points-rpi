@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:5000")
-MACHINE_ID = os.getenv("MACHINE_ID", "RVM-MAIN-001")
+MACHINE_ID = os.getenv("MACHINE_ID", "RVM-PU-01")
 LOCATION = os.getenv("LOCATION", "Institute of Technology")
 
 # --- CONFIGURATION ---
@@ -41,8 +41,9 @@ class UIBridge:
 
     def _run_server(self):
         asyncio.set_event_loop(self.loop)
-        start_server = websockets.serve(self._handler, self.host, self.port)
-        self.loop.run_until_complete(start_server)
+        async def start():
+            return await websockets.serve(self._handler, self.host, self.port)
+        self.loop.run_until_complete(start())
         self.loop.run_forever()
 
     async def _handler(self, websocket):
@@ -150,19 +151,39 @@ class HardwareInterface:
 
 # --- MAIN LOGIC  ---
 def run_ecopoints_firmware():
+    # Check if CLI mode is enabled via environment variable or command line argument
+    cli_mode = os.getenv("CLI_MODE", "false").lower() in ("true", "1", "yes")
+    if "--cli" in sys.argv:
+        cli_mode = True
+
     hw = HardwareInterface()
     hw.boot_sequence()
+
+    if cli_mode:
+        hw.log("SYS", "Running in CLI/Terminal simulation mode (no UI required).")
+    else:
+        hw.log("SYS", "Running in UI-driven mode (WebSocket UI required).")
 
     user_total_points = 0
 
     while True:
         # --- STATE: IDLE / WELCOME ---
+        # If in UI-driven mode, wait for at least one Kiosk UI client to connect first
+        if not cli_mode and not ui_bridge.clients:
+            hw.log("SYS", "Waiting for Kiosk UI client to connect on ws://localhost:8765 ...")
+            while not ui_bridge.clients:
+                time.sleep(1)
+            hw.log("SYS", "Kiosk UI client connected! Starting session...")
+
         hw.log("SYS", "State: IDLE")
 
         # Check Storage Sensor
         hw.log("SENSOR", f"Reading PIN_{PIN_STORAGE_LEVEL} (Storage Level)...")
-        #  Just a simulation to sensors. It should be automatic in the actual machine.
-        is_full = hw.read_sensor_override("Storage Sensor", "Is the bin FULL?")
+        # Just a simulation of sensors. It is fully automatic in UI-driven mode.
+        if not cli_mode:
+            is_full = False
+        else:
+            is_full = hw.read_sensor_override("Storage Sensor", "Is the bin FULL?")
 
         if is_full:
             hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
@@ -172,11 +193,17 @@ def run_ecopoints_firmware():
 
         hw.display_ui("Press Start Button", "GO_IDLE")
         ui_bridge.clear_queue()
-        if not ui_bridge.clients:
+        if cli_mode:
             input("   >>> [BUTTON INPUT] Press ENTER to simulate Start Button click...")
         else:
             hw.log("SYS", "Waiting for WAKE event (touchscreen tap)...")
             while True:
+                # If we lost client connection in UI mode, wait for reconnection
+                if not ui_bridge.clients:
+                    hw.log("SYS", "UI client disconnected. Waiting for reconnection...")
+                    while not ui_bridge.clients:
+                        time.sleep(1)
+                    hw.log("SYS", "UI client reconnected.")
                 msg = ui_bridge.get_message(timeout=0.5)
                 if msg and msg.get("action") == "WAKE":
                     break
@@ -190,7 +217,7 @@ def run_ecopoints_firmware():
         session_id = None
         while not qr_flow_complete:
             scanned_qr_data = None
-            if not ui_bridge.clients:
+            if cli_mode:
                 # Simulate waiting for scan
                 time.sleep(1)
                 is_scanned = hw.read_sensor_override("Camera", "Did the user SCAN the QR?")
@@ -207,6 +234,10 @@ def run_ecopoints_firmware():
             else:
                 hw.log("SYS", "Waiting for QR code scan from Kiosk UI...")
                 while True:
+                    if not ui_bridge.clients:
+                        hw.log("SYS", "UI client disconnected during scan.")
+                        qr_flow_complete = "TIMEOUT"
+                        break
                     msg = ui_bridge.get_message(timeout=0.5)
                     if msg:
                         if msg.get("action") == "CANCEL":
@@ -234,7 +265,6 @@ def run_ecopoints_firmware():
                     ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
                 else:
                     is_valid = False
-                    ui_bridge.broadcast("LOGIN_DENIED")
             except requests.exceptions.RequestException as e:
                 hw.log("API_ERROR", f"Could not connect to backend: {e}")
                 is_valid = False
@@ -242,7 +272,9 @@ def run_ecopoints_firmware():
             if not is_valid:
                 hw.display_ui("QR not recognized. Please try again.")
                 hw.log("WARN", "Invalid Token detected.")
-                # Loops back inside the QR loop
+                ui_bridge.broadcast("LOGIN_DENIED")
+                qr_flow_complete = "TIMEOUT"
+                break
             else:
                 hw.log("API", "Token Authenticated.")
                 qr_flow_complete = True
@@ -258,67 +290,82 @@ def run_ecopoints_firmware():
             hw.log("MECH", "Unlocking Safety Door...")
             hw.log("MECH", "Door Unlocked.")
 
-            # --- DOOR CHECK LOOP ---
-            while True:
-                # Simulating a magnetic reed switch on the door
-                is_closed = hw.read_sensor_override("Door Sensor", "Is the door CLOSED?")
-                if not is_closed:
-                    hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
-                    hw.log("WARN", f"GPIO_{PIN_DOOR_SENSOR} State: OPEN")
-                else:
-                    hw.log("INFO", f"GPIO_{PIN_DOOR_SENSOR} State: CLOSED")
-                    hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-                    hw.log("MECH", "Locking Safety Door...")
-                    break
-
-            # --- PLATFORM EMPTY CHECK ---
-            hw.log("SCALE", "Taring scale...")
-            is_empty = hw.read_sensor_override("Weight Scale", "Is the platform EMPTY (User put nothing in)?")
-
-            if is_empty:
-                hw.log("TIMER", "Activity Timeout. No object detected.")
-                hw.log("SYS", "Resetting...")
-                transacting = False
-                break  # Goes back to main "Welcome" loop
-
-            # --- VERIFICATION ---
-            hw.log("PROC", "Verifying Objects...")
-            hw.display_ui("Processing...", "BOTTLE_INSERTED")
-            hw.spin_motor(duration=1.5)  # Simulate conveyor/scanner moving
-
-            # --- VALIDITY CHECK LOOP ---
-            # Loops back to verify if invalid
-            bottles_valid = False
-            while not bottles_valid:
-                # Computer Vision simulation
-                bottles_valid = hw.read_sensor_override("CV Model", "Are the bottles VALID (Plastic/Glass)?")
-
-                if not bottles_valid:
-                    hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
-                    hw.display_ui("Transaction Denied: Invalid Item Detected", "VERIFY_FAIL", {"reason": "Non-recyclable material detected."})
-                    hw.display_ui("Please remove invalid item")
-
-                    hw.log("MECH", "Unlocking door for removal...")
+            if not cli_mode:
+                hw.log("SYS", "Waiting for BOTTLE_INSERTED event from Kiosk UI...")
+                user_inserted = False
+                while True:
                     if not ui_bridge.clients:
-                        input("   >>> [USER ACTION] Press ENTER once you have removed the item...")
-                    else:
-                        hw.log("SYS", "Waiting for user action on Kiosk UI...")
-                        user_wants_retry = None
-                        while True:
-                            msg = ui_bridge.get_message(timeout=0.5)
-                            if msg:
-                                if msg.get("action") == "REPEAT_READY":
-                                    user_wants_retry = True
-                                    break
-                                elif msg.get("action") == "FINISH":
-                                    user_wants_retry = False
-                                    break
-                        if not user_wants_retry:
-                            transacting = False
+                        hw.log("SYS", "UI client disconnected during transaction.")
+                        user_inserted = False
+                        break
+                    msg = ui_bridge.get_message(timeout=0.5)
+                    if msg:
+                        if msg.get("action") == "CANCEL":
+                            user_inserted = False
                             break
-                    hw.log("MECH", "Door Locked. Retrying scan...")
-                else:
-                    hw.log("INFO", "Object Classification: PET BOTTLE (Accepted)")
+                        elif msg.get("action") == "BOTTLE_INSERTED":
+                            user_inserted = True
+                            break
+                if not user_inserted:
+                    hw.log("SYS", "Transaction cancelled.")
+                    transacting = False
+                    break
+                
+                # Auto-simulate hardware transitions since user inserted bottle via UI
+                hw.log("INFO", f"GPIO_{PIN_DOOR_SENSOR} State: CLOSED (Auto-detected)")
+                hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
+                hw.log("MECH", "Locking Safety Door...")
+                hw.log("SCALE", "Taring scale...")
+                hw.log("PROC", "Verifying Objects...")
+                hw.display_ui("Processing...", "BOTTLE_INSERTED")
+                hw.spin_motor(duration=1.5)
+                hw.log("INFO", "Object Classification: PET BOTTLE (Accepted)")
+            else:
+                # --- DOOR CHECK LOOP ---
+                while True:
+                    # Simulating a magnetic reed switch on the door
+                    is_closed = hw.read_sensor_override("Door Sensor", "Is the door CLOSED?")
+                    if not is_closed:
+                        hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
+                        hw.log("WARN", f"GPIO_{PIN_DOOR_SENSOR} State: OPEN")
+                    else:
+                        hw.log("INFO", f"GPIO_{PIN_DOOR_SENSOR} State: CLOSED")
+                        hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
+                        hw.log("MECH", "Locking Safety Door...")
+                        break
+
+                # --- PLATFORM EMPTY CHECK ---
+                hw.log("SCALE", "Taring scale...")
+                is_empty = hw.read_sensor_override("Weight Scale", "Is the platform EMPTY (User put nothing in)?")
+
+                if is_empty:
+                    hw.log("TIMER", "Activity Timeout. No object detected.")
+                    hw.log("SYS", "Resetting...")
+                    transacting = False
+                    break  # Goes back to main "Welcome" loop
+
+                # --- VERIFICATION ---
+                hw.log("PROC", "Verifying Objects...")
+                hw.display_ui("Processing...", "BOTTLE_INSERTED")
+                hw.spin_motor(duration=1.5)  # Simulate conveyor/scanner moving
+
+                # --- VALIDITY CHECK LOOP ---
+                # Loops back to verify if invalid
+                bottles_valid = False
+                while not bottles_valid:
+                    # Computer Vision simulation
+                    bottles_valid = hw.read_sensor_override("CV Model", "Are the bottles VALID (Plastic/Glass)?")
+
+                    if not bottles_valid:
+                        hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
+                        hw.display_ui("Transaction Denied: Invalid Item Detected", "VERIFY_FAIL", {"reason": "Non-recyclable material detected."})
+                        hw.display_ui("Please remove invalid item")
+
+                        hw.log("MECH", "Unlocking door for removal...")
+                        input("   >>> [USER ACTION] Press ENTER once you have removed the item...")
+                        hw.log("MECH", "Door Locked. Retrying scan...")
+                    else:
+                        hw.log("INFO", "Object Classification: PET BOTTLE (Accepted)")
 
             # --- CALCULATION ---
             points = 10
@@ -347,12 +394,16 @@ def run_ecopoints_firmware():
 
             # --- TRANSACT ANOTHER? ---
             hw.log("SYS", "Waiting for user decision...")
-            if not ui_bridge.clients:
+            if cli_mode:
                 again = hw.read_sensor_override("Touchscreen", "Does user press 'Transact Another'?")
             else:
                 hw.log("SYS", "Waiting for user selection on Kiosk UI...")
                 again = None
                 while True:
+                    if not ui_bridge.clients:
+                        hw.log("SYS", "UI client disconnected during decision.")
+                        again = False
+                        break
                     msg = ui_bridge.get_message(timeout=0.5)
                     if msg:
                         if msg.get("action") == "REPEAT_READY":
