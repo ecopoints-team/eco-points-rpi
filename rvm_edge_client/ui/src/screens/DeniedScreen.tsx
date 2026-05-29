@@ -18,10 +18,9 @@ export default function DeniedScreen() {
       <BackgroundGlow style={styles.container}>
         <LogoHeader />
         <StatusBadge label="ACCESS DENIED" variant="warning" />
-        <Text style={styles.title}>Account Not Recognized</Text>
+        <Text style={styles.title}>QR not Recognized.</Text>
         <Text style={styles.body}>
-          Please check your QR code and try again.{'\n'}
-          If the problem persists, contact support.
+          Please Try Again.
         </Text>
         <Text style={styles.hint}>Tap anywhere to return to start</Text>
       </BackgroundGlow>

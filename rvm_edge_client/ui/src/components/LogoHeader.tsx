@@ -14,7 +14,7 @@ export default function LogoHeader({ logoSize = scale(110) }: LogoHeaderProps) {
   return (
     <View style={styles.container}>
       <Image
-        source={require('../../assets/EcoPoints Logo.png')}
+        source={require('../../assets/Logo EcoPoints.png')}
         style={[styles.logo, { width: logoSize, height: logoSize }]}
         resizeMode="contain"
       />

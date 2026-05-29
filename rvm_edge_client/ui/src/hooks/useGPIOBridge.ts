@@ -48,6 +48,9 @@ export function useGPIOBridge(dispatch: React.Dispatch<KioskAction>) {
             case 'LOGIN_SUCCESS':
               dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: data.userName || 'Unknown' } });
               break;
+            case 'ADMIN_LOGIN':
+              dispatch({ type: 'ADMIN_LOGIN', payload: { userName: data.userName || 'Admin' } });
+              break;
             case 'LOGIN_DENIED':
               dispatch({ type: 'LOGIN_DENIED' });
               break;
@@ -72,6 +75,12 @@ export function useGPIOBridge(dispatch: React.Dispatch<KioskAction>) {
             case 'SET_BIN_FULL':
             case 'BIN_FULL':
               dispatch({ type: 'SET_BIN_FULL' });
+              break;
+            case 'CLEAR_BIN_FULL':
+              dispatch({ type: 'CLEAR_BIN_FULL' });
+              break;
+            case 'BIN_FULL_USER_DENIED':
+              dispatch({ type: 'BIN_FULL_USER_DENIED' });
               break;
             case 'SET_DOOR_OPEN':
             case 'DOOR_OPEN':

@@ -7,6 +7,7 @@ const TIMERS: Partial<Record<KioskState, number>> = {
   REJECTED: 8_000,
   THANK_YOU: 5_000,
   DENIED: 6_000,
+  BIN_FULL_DENIED: 10_000,
 };
 
 const ACTIONS: Partial<Record<KioskState, KioskAction>> = {
@@ -15,6 +16,7 @@ const ACTIONS: Partial<Record<KioskState, KioskAction>> = {
   REJECTED: { type: 'ADVANCE_THANK_YOU' },
   THANK_YOU: { type: 'SYSTEM_CLEAR' },
   DENIED: { type: 'SYSTEM_CLEAR' },
+  BIN_FULL_DENIED: { type: 'SYSTEM_CLEAR' },
 };
 
 export function useKioskTimer(

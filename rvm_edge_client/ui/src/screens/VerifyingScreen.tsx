@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -16,10 +16,14 @@ import { getVerificationResult } from '../api/kioskApi';
 import { DEV_MODE } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
+const NO_ITEMS_TIMEOUT_MS = 60_000;
+const ABORT_DISPLAY_MS = 3_000;
+
 export default function VerifyingScreen() {
   const { dispatch } = useKiosk();
   const rotation = useSharedValue(0);
   const pulse = useSharedValue(1);
+  const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
     rotation.value = withRepeat(
@@ -54,6 +58,24 @@ export default function VerifyingScreen() {
     }
   }, []);
 
+  // 60-second no-items timeout
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setTimedOut(true);
+    }, NO_ITEMS_TIMEOUT_MS);
+
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // After showing timeout message, return to start
+  useEffect(() => {
+    if (!timedOut) return;
+    const abort = setTimeout(() => {
+      dispatch({ type: 'SYSTEM_CLEAR' });
+    }, ABORT_DISPLAY_MS);
+    return () => clearTimeout(abort);
+  }, [timedOut]);
+
   const spinCW = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
   }));
@@ -66,6 +88,17 @@ export default function VerifyingScreen() {
     transform: [{ scale: pulse.value }],
     opacity: pulse.value === 1 ? 0.8 : 1,
   }));
+
+  if (timedOut) {
+    return (
+      <BackgroundGlow style={styles.container}>
+        <LogoHeader />
+        <Feather name="alert-circle" size={80} color={Colors.error} />
+        <Text style={styles.timeoutTitle}>No Items Detected</Text>
+        <Text style={styles.timeoutSubtitle}>Aborting Session.</Text>
+      </BackgroundGlow>
+    );
+  }
 
   return (
     <BackgroundGlow style={styles.container}>
@@ -148,6 +181,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitle: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.lg,
+    color: Colors.body,
+    textAlign: 'center',
+  },
+  // Timeout state
+  timeoutTitle: {
+    fontFamily: Fonts.headingBold,
+    fontSize: FontSizes.xxl,
+    color: Colors.error,
+    textAlign: 'center',
+  },
+  timeoutSubtitle: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.lg,
     color: Colors.body,

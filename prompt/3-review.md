@@ -13,4 +13,4 @@ Then, fix all the concerns you raised in order to finish the implementation of t
 
 When you are done with the changes, create a short list that summarizes the problems you found and the fixes you added to the code.
 
-This is the task that needs to be solved: make sure that this is A React-based frontend (Next.js/Vite) for users.
+This is the task that needs to be solved:

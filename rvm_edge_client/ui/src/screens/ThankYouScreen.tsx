@@ -25,111 +25,111 @@ export default function ThankYouScreen() {
       activeOpacity={1}
       onPress={() => dispatch({ type: 'SYSTEM_CLEAR' })}
     >
-    <LinearGradient
-      colors={[Colors.bg, Colors.bgTint, '#DCFCE7']}
-      style={styles.container}
-    >
-      {/* Background layers */}
-      <HexGridPattern />
-      <PulsingRings />
-      <FloatingLeaves count={8} />
-      <LogoHeader />
+      <LinearGradient
+        colors={[Colors.bg, Colors.bgTint, '#DCFCE7']}
+        style={styles.container}
+      >
+        {/* Background layers */}
+        <HexGridPattern />
+        <PulsingRings />
+        <FloatingLeaves count={8} />
+        <LogoHeader />
 
-      {/* Thank You Heading */}
-      <Text style={styles.heading}>Thank You!</Text>
-      <Text style={styles.subtitle}>Your EcoPoints have been credited.</Text>
+        {/* Thank You Heading */}
+        <Text style={styles.heading}>Thank you for using EcoPoints!</Text>
 
-      {/* Receipt Card */}
-      <View style={styles.receiptCard}>
-        {/* Top Perforation */}
-        <View style={styles.perforation}>
-          {Array.from({ length: 18 }).map((_, i) => (
-            <View key={i} style={styles.perforationDot} />
-          ))}
-        </View>
-
-        {/* Logo Section */}
-        <View style={styles.logoSection}>
-          <Image
-            source={require('../../assets/favicon.png')}
-            style={styles.receiptLogo}
-            resizeMode="contain"
-          />
-          <Text style={styles.receiptBrand}>ECOPOINTS</Text>
-          <Text style={styles.receiptSubtitle}>Official Transaction</Text>
-        </View>
-
-        {/* Dashed Divider */}
-        <View style={styles.dashedDivider} />
-
-        {/* Key-Value Rows */}
-        <View style={styles.rowsSection}>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Description</Text>
-            <Text style={styles.rowValue}>Bottle Recycling</Text>
+        {/* Receipt Card */}
+        <View style={styles.receiptCard}>
+          {/* Top Perforation */}
+          <View style={styles.perforation}>
+            {Array.from({ length: 18 }).map((_, i) => (
+              <View key={i} style={styles.perforationDot} />
+            ))}
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Date</Text>
-            <Text style={styles.rowValueMono}>{dateStr}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Time</Text>
-            <Text style={styles.rowValueMono}>{timeStr}</Text>
-          </View>
-          {totalBottles > 0 && (
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Qty Recycled</Text>
-              <Text style={styles.rowValueBold}>{totalBottles} Units</Text>
-            </View>
-          )}
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Reference</Text>
-            <Text style={styles.rowValueMono}>{refCode}</Text>
-          </View>
-        </View>
 
-        {/* Dashed Divider */}
-        <View style={styles.dashedDivider} />
-
-        {/* Points Total Box */}
-        <View style={styles.totalBox}>
-          <Text style={styles.totalLabel}>POINTS TOTAL</Text>
-          <Text style={styles.totalValue}>+{totalPoints}</Text>
-        </View>
-
-        {/* Thank You Message */}
-        <View style={styles.messageSection}>
-          <Text style={styles.thankYouMsg}>
-            Thank you for helping us keep the campus green!
-          </Text>
-          <Text style={styles.verificationCode}>
-            Verification Code: {refCode}
-          </Text>
-        </View>
-
-        {/* Barcode Mockup */}
-        <View style={styles.barcodeRow}>
-          {Array.from({ length: 15 }).map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.barcodeLine,
-                { width: i % 4 === 0 ? 3 : 1.5 },
-              ]}
+          {/* Logo Section */}
+          <View style={styles.logoSection}>
+            <Image
+              source={require('../../assets/favicon.png')}
+              style={styles.receiptLogo}
+              resizeMode="contain"
             />
-          ))}
+            <Text style={styles.receiptBrand}>ECOPOINTS</Text>
+            <Text style={styles.receiptSubtitle}>Official Transaction</Text>
+          </View>
+
+          {/* Dashed Divider */}
+          <View style={styles.dashedDivider} />
+
+          {/* Key-Value Rows */}
+          <View style={styles.rowsSection}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Description</Text>
+              <Text style={styles.rowValue}>Bottle Recycling</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Date</Text>
+              <Text style={styles.rowValueMono}>{dateStr}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Time</Text>
+              <Text style={styles.rowValueMono}>{timeStr}</Text>
+            </View>
+            {totalBottles > 0 && (
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Qty Recycled</Text>
+                <Text style={styles.rowValueBold}>{totalBottles} Units</Text>
+              </View>
+            )}
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Reference</Text>
+              <Text style={styles.rowValueMono}>{refCode}</Text>
+            </View>
+          </View>
+
+          {/* Dashed Divider */}
+          <View style={styles.dashedDivider} />
+
+          {/* Points Total Box */}
+          <View style={styles.totalBox}>
+            <Text style={styles.totalLabel}>POINTS TOTAL</Text>
+            <Text style={styles.totalValue}>+{totalPoints}</Text>
+          </View>
+
+          {/* Thank You Message */}
+          <View style={styles.messageSection}>
+            <Text style={styles.thankYouMsg}>
+              Thank you for helping us keep the campus green!
+            </Text>
+            <Text style={styles.verificationCode}>
+              Verification Code: {refCode}
+            </Text>
+          </View>
+
+          {/* Barcode Mockup */}
+          <View style={styles.barcodeRow}>
+            {Array.from({ length: 15 }).map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.barcodeLine,
+                  { width: i % 4 === 0 ? 3 : 1.5 },
+                ]}
+              />
+            ))}
+          </View>
+
+          {/* Bottom Jagged Edge */}
+          <View style={styles.jaggedEdge}>
+            {Array.from({ length: 20 }).map((_, i) => (
+              <View key={i} style={styles.jaggedTriangle} />
+            ))}
+          </View>
         </View>
 
-        {/* Bottom Jagged Edge */}
-        <View style={styles.jaggedEdge}>
-          {Array.from({ length: 20 }).map((_, i) => (
-            <View key={i} style={styles.jaggedTriangle} />
-          ))}
-        </View>
-      </View>
-
-      <Text style={styles.tapHint}>Tap anywhere to continue</Text>
-    </LinearGradient>
+        {/* Anchor Hint text permanently to the bottom */}
+        <Text style={styles.tapHint}>Tap anywhere to continue</Text>
+      </LinearGradient>
     </TouchableOpacity>
   );
 }
@@ -148,10 +148,11 @@ const styles = StyleSheet.create({
   // Heading
   heading: {
     fontFamily: Fonts.headingBold,
-    fontSize: FontSizes.xxl,
+    fontSize: FontSizes.xl * 1.2,
     color: Colors.heading,
     textAlign: 'center',
     zIndex: 10,
+    marginTop: vscale(45), // Pushes the text block and the receipt downwards
   },
   subtitle: {
     fontFamily: Fonts.body,
@@ -343,12 +344,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
 
-  // Tap hint
+  // Tap hint 
   tapHint: {
+    position: 'absolute',
+    bottom: vscale(20),
+    alignSelf: 'center',
     fontFamily: Fonts.body,
     fontSize: FontSizes.sm,
     color: Colors.body,
-    marginTop: Spacing.xs,
     opacity: 0.6,
     zIndex: 10,
   },
