@@ -21,7 +21,7 @@ export default function AcceptedScreen() {
       >
         <PulsingRings />
         <LogoHeader />
-        <StatusBadge label="Bottles Accepted" variant="success" />
+        <StatusBadge label="Transaction Successful" variant="success" />
         <PointsDisplay value={payload.points ?? 0} />
         <Text style={styles.bottles}>
           {payload.bottleCount ?? 0} bottle{(payload.bottleCount ?? 0) !== 1 ? 's' : ''} recycled

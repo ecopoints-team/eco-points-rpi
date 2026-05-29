@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -51,7 +51,7 @@ export default function GlowButton({ label, onPress, style, variant = 'primary' 
       : ([Colors.primary, Colors.primaryDark] as const);
 
   return (
-    <Animated.View style={[styles.shadow, animStyle, style]}>
+    <Animated.View style={[animStyle, style]}>
       <TouchableOpacity
         onPress={onPress}
         onPressIn={handlePressIn}
@@ -72,13 +72,6 @@ export default function GlowButton({ label, onPress, style, variant = 'primary' 
 }
 
 const styles = StyleSheet.create({
-  shadow: {
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
-  },
   btn: {
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.lg,

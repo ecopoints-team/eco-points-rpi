@@ -10,17 +10,20 @@ import { useKiosk, KioskState } from '../context/KioskContext';
 import { Colors, Fonts, FontSizes } from '../constants/theme';
 
 const SCREENS: { label: string; screen: KioskState }[] = [
-  { label: '1 Start',     screen: 'START' },
-  { label: '2 Idle',      screen: 'IDLE' },
-  { label: '3 QR Scan',   screen: 'QR_SCAN' },
-  { label: '4 Ready',     screen: 'READY' },
-  { label: '5 Verifying', screen: 'VERIFYING' },
-  { label: '6 Accepted',  screen: 'ACCEPTED' },
-  { label: '7 Rejected',  screen: 'REJECTED' },
-  { label: '8 Thank You', screen: 'THANK_YOU' },
-  { label: '9 Bin Full',  screen: 'BIN_FULL' },
-  { label: '10 Door Open',screen: 'DOOR_OPEN' },
-  { label: '11 Denied',   screen: 'DENIED' },
+  { label: '1 Start',       screen: 'START' },
+  { label: '2 Idle',        screen: 'IDLE' },
+  { label: '3 QR Scan',     screen: 'QR_SCAN' },
+  { label: '4 Ready',       screen: 'READY' },
+  { label: '5 Verifying',   screen: 'VERIFYING' },
+  { label: '6 Accepted',    screen: 'ACCEPTED' },
+  { label: '7 Rejected',    screen: 'REJECTED' },
+  { label: '8 Thank You',   screen: 'THANK_YOU' },
+  { label: '9 Door Open',   screen: 'DOOR_OPEN' },
+  { label: '10 Denied',     screen: 'DENIED' },
+  { label: '11 Admin Menu', screen: 'ADMIN_MENU' },
+  { label: '12 Admin Act',  screen: 'ADMIN_ACTION' },
+  { label: '13 Admin Note', screen: 'ADMIN_NOTES' },
+  { label: '14 Bin Denied', screen: 'BIN_FULL_DENIED' },
 ];
 
 // Fake payload so result screens render correctly
@@ -32,7 +35,7 @@ const MOCK_PAYLOAD = {
 };
 
 export default function DevPanel() {
-  const { screen: current, dispatch } = useKiosk();
+  const { screen: current, payload, dispatch } = useKiosk();
   const [open, setOpen] = useState(false);
 
   if (!open) {
@@ -56,7 +59,7 @@ export default function DevPanel() {
     >
       {/* Toggle tab */}
       <TouchableOpacity style={styles.tab} onPress={() => setOpen(false)}>
-        <Text style={styles.tabText}>▼ DEV (Leave or tap to hide)</Text>
+        <Text style={styles.tabText}>▼ DEV (Leave or tap to hide) | Bin: {payload.isBinFull ? '🔴 FULL' : '🟢 OK'}</Text>
       </TouchableOpacity>
 
       <ScrollView
@@ -65,6 +68,22 @@ export default function DevPanel() {
         contentContainerStyle={styles.row}
         showsHorizontalScrollIndicator={false}
       >
+        {/* Bin Full Toggle */}
+        <TouchableOpacity
+          style={[styles.btn, styles.toggleBtn]}
+          onPress={() => {
+            if (payload.isBinFull) {
+              dispatch({ type: 'CLEAR_BIN_FULL' });
+            } else {
+              dispatch({ type: 'SET_BIN_FULL' });
+            }
+          }}
+        >
+          <Text style={[styles.btnText, styles.toggleText]}>
+            {payload.isBinFull ? '🗑 Clear Bin' : '🗑 Set Bin Full'}
+          </Text>
+        </TouchableOpacity>
+
         {SCREENS.map(({ label, screen }) => (
           <TouchableOpacity
             key={screen}
@@ -83,13 +102,16 @@ export default function DevPanel() {
                 dispatch({ type: 'VERIFY_FAIL', payload: { reason: MOCK_PAYLOAD.reason } });
                 return;
               }
-              if (screen === 'DENIED')   { dispatch({ type: 'LOGIN_DENIED' }); return; }
-              if (screen === 'BIN_FULL') { dispatch({ type: 'SET_BIN_FULL' }); return; }
-              if (screen === 'DOOR_OPEN'){ dispatch({ type: 'SET_DOOR_OPEN' }); return; }
-              if (screen === 'IDLE')     { dispatch({ type: 'GO_IDLE' }); return; }
-              if (screen === 'START')    { dispatch({ type: 'SYSTEM_CLEAR' }); return; }
-              if (screen === 'THANK_YOU'){ dispatch({ type: 'ADVANCE_THANK_YOU' }); return; }
-              if (screen === 'QR_SCAN')  { dispatch({ type: 'WAKE' }); return; }
+              if (screen === 'DENIED')          { dispatch({ type: 'LOGIN_DENIED' }); return; }
+              if (screen === 'DOOR_OPEN')       { dispatch({ type: 'SET_DOOR_OPEN' }); return; }
+              if (screen === 'IDLE')            { dispatch({ type: 'GO_IDLE' }); return; }
+              if (screen === 'START')           { dispatch({ type: 'SYSTEM_CLEAR' }); return; }
+              if (screen === 'THANK_YOU')       { dispatch({ type: 'ADVANCE_THANK_YOU' }); return; }
+              if (screen === 'QR_SCAN')         { dispatch({ type: 'WAKE' }); return; }
+              if (screen === 'ADMIN_MENU')      { dispatch({ type: 'ADMIN_LOGIN', payload: { userName: 'Admin' } }); return; }
+              if (screen === 'ADMIN_ACTION')    { dispatch({ type: 'ADMIN_LOGIN', payload: { userName: 'Admin' } }); dispatch({ type: 'ADMIN_SELECT_CATEGORY', payload: { category: 'maintenance' } }); return; }
+              if (screen === 'ADMIN_NOTES')     { dispatch({ type: 'ADMIN_LOGIN', payload: { userName: 'Admin' } }); dispatch({ type: 'ADMIN_SELECT_CATEGORY', payload: { category: 'maintenance' } }); dispatch({ type: 'ADMIN_SELECT_ACTION', payload: { action: 'Sensor Error' } }); return; }
+              if (screen === 'BIN_FULL_DENIED') { dispatch({ type: 'BIN_FULL_USER_DENIED' }); return; }
             }}
           >
             <Text style={[styles.btnText, current === screen && styles.btnTextActive]}>
@@ -160,6 +182,14 @@ const styles = StyleSheet.create({
   },
   btnTextActive: {
     color: Colors.white,
+    fontFamily: Fonts.bodyBold,
+  },
+  toggleBtn: {
+    borderColor: Colors.accent,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+  },
+  toggleText: {
+    color: Colors.accent,
     fontFamily: Fonts.bodyBold,
   },
 });

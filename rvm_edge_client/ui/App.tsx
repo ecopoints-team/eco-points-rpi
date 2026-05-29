@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import DevPanel from './src/components/DevPanel';
+import LightIndicator from './src/components/LightIndicator';
 import {
   useFonts,
   Fredoka_400Regular,
@@ -24,9 +25,12 @@ import VerifyingScreen from './src/screens/VerifyingScreen';
 import AcceptedScreen from './src/screens/AcceptedScreen';
 import RejectedScreen from './src/screens/RejectedScreen';
 import ThankYouScreen from './src/screens/ThankYouScreen';
-import BinFullScreen from './src/screens/BinFullScreen';
 import DoorOpenScreen from './src/screens/DoorOpenScreen';
 import DeniedScreen from './src/screens/DeniedScreen';
+import AdminMenuScreen from './src/screens/AdminMenuScreen';
+import AdminActionScreen from './src/screens/AdminActionScreen';
+import AdminNotesScreen from './src/screens/AdminNotesScreen';
+import BinFullDeniedScreen from './src/screens/BinFullDeniedScreen';
 import { Colors } from './src/constants/theme';
 
 function KioskRouter() {
@@ -37,23 +41,27 @@ function KioskRouter() {
 
   let ActiveScreen: React.ReactElement;
   switch (screen) {
-    case 'START':      ActiveScreen = <StartScreen />; break;
-    case 'IDLE':       ActiveScreen = <IdleScreen />; break;
-    case 'QR_SCAN':    ActiveScreen = <QRScanScreen />; break;
-    case 'READY':      ActiveScreen = <ReadyScreen />; break;
-    case 'VERIFYING':  ActiveScreen = <VerifyingScreen />; break;
-    case 'ACCEPTED':   ActiveScreen = <AcceptedScreen />; break;
-    case 'REJECTED':   ActiveScreen = <RejectedScreen />; break;
-    case 'THANK_YOU':  ActiveScreen = <ThankYouScreen />; break;
-    case 'BIN_FULL':   ActiveScreen = <BinFullScreen />; break;
-    case 'DOOR_OPEN':  ActiveScreen = <DoorOpenScreen />; break;
-    case 'DENIED':     ActiveScreen = <DeniedScreen />; break;
-    default:           ActiveScreen = <StartScreen />;
+    case 'START':           ActiveScreen = <StartScreen />; break;
+    case 'IDLE':            ActiveScreen = <IdleScreen />; break;
+    case 'QR_SCAN':         ActiveScreen = <QRScanScreen />; break;
+    case 'READY':           ActiveScreen = <ReadyScreen />; break;
+    case 'VERIFYING':       ActiveScreen = <VerifyingScreen />; break;
+    case 'ACCEPTED':        ActiveScreen = <AcceptedScreen />; break;
+    case 'REJECTED':        ActiveScreen = <RejectedScreen />; break;
+    case 'THANK_YOU':       ActiveScreen = <ThankYouScreen />; break;
+    case 'DOOR_OPEN':       ActiveScreen = <DoorOpenScreen />; break;
+    case 'DENIED':          ActiveScreen = <DeniedScreen />; break;
+    case 'ADMIN_MENU':      ActiveScreen = <AdminMenuScreen />; break;
+    case 'ADMIN_ACTION':    ActiveScreen = <AdminActionScreen />; break;
+    case 'ADMIN_NOTES':     ActiveScreen = <AdminNotesScreen />; break;
+    case 'BIN_FULL_DENIED': ActiveScreen = <BinFullDeniedScreen />; break;
+    default:                ActiveScreen = <StartScreen />;
   }
 
   return (
     <View style={{ flex: 1 }}>
       {ActiveScreen}
+      <LightIndicator />
       <DevPanel />
     </View>
   );

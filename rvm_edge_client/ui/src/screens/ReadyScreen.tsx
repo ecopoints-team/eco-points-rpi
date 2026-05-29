@@ -25,7 +25,7 @@ export default function ReadyScreen() {
 
       <View style={styles.textWrapper}>
         <Text style={styles.instruction}>
-          Please insert plastic bottles to begin.
+          Please insert bottles in place.
         </Text>
         <Text style={styles.hint}>
           The machine will scan and verify them automatically.
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   },
   simButtonText: {
     fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs - 2, // Extra small text to make it extremely unobtrusive
+    fontSize: FontSizes.xs - 2, 
     color: Colors.primaryDark,
     fontWeight: 'bold',
   },

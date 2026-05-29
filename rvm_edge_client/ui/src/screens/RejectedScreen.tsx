@@ -15,9 +15,9 @@ export default function RejectedScreen() {
     <BackgroundGlow style={styles.container}>
       <LogoHeader />
       <StatusBadge label="Bottles Rejected" variant="error" />
-      <Text style={styles.title}>Bottles Not Accepted</Text>
+      <Text style={styles.title}>Transaction Denied</Text>
       <Text style={styles.reason}>
-        {payload.reason ?? 'Unable to verify the bottles.'}
+        Please remove invalid item.
       </Text>
       <View style={styles.buttonRow}>
         <GlowButton
