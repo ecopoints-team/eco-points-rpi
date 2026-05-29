@@ -1,0 +1,14 @@
+# Web & API Communication
+requests
+python-dotenv
+Flask
+websockets
+
+# Computer Vision & Machine Learning
+ultralytics
+opencv-python
+
+# Hardware & GPIO (For Raspberry Pi)
+# Note: RPi.GPIO only installs successfully on actual Raspberry Pi hardware.
+# If you are testing on Windows, you may need to comment it out or use a mockup library.
+# RPi.GPIO
