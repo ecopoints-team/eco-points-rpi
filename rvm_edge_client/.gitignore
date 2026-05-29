@@ -23,6 +23,10 @@ temp/
 !ui/assets/
 !ui/assets/**
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> c6b57a84d75a23ddd612b2ba30c221b1520ea44c
 # Model weights 
 # Note: GitHub has a 100MB file limit. yolov8s.pt is ~22MB so it can be committed.
 # Uncomment the line below if you prefer NOT to track model weights in git:
