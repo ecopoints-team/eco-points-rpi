@@ -1,31 +1,40 @@
 import React from 'react';
-import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import StatusBadge from '../components/StatusBadge';
 import LogoHeader from '../components/LogoHeader';
+import GlowButton from '../components/GlowButton';
 import { useKiosk } from '../context/KioskContext';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
 export default function DoorOpenScreen() {
   const { dispatch } = useKiosk();
 
   return (
-    <TouchableOpacity
-      style={{ flex: 1 }}
-      activeOpacity={1}
-      onPress={() => dispatch({ type: 'SYSTEM_CLEAR' })}
+    <LinearGradient
+      colors={['#FEE2E2', '#FECACA', '#FEE2E2']}
+      style={styles.container}
     >
-      <LinearGradient
-        colors={['#FEE2E2', '#FECACA', '#FEE2E2']}
-        style={styles.container}
-      >
-        <LogoHeader />
-        <StatusBadge label="DOOR OPEN" variant="error" />
-        <Text style={styles.title}>Please Close the Door</Text>
-        <Text style={styles.subtitle}>The machine will process your bottles</Text>
-        <Text style={styles.tap}>Tap anywhere to return to start</Text>
-      </LinearGradient>
-    </TouchableOpacity>
+      <LogoHeader />
+      <StatusBadge label="DOOR OPEN" variant="error" />
+      <Text style={styles.title}>Please close the door to proceed.</Text>
+      <Text style={styles.subtitle}>
+        The machine will process your bottles once the door is closed.
+      </Text>
+
+      <GlowButton
+        label="Cancel Session"
+        variant="outline"
+        onPress={() => {
+          dispatch({ type: 'SYSTEM_CLEAR' });
+          if (!DEV_MODE) {
+            sendGPIOEvent({ action: 'CANCEL' });
+          }
+        }}
+        style={styles.cancelBtn}
+      />
+    </LinearGradient>
   );
 }
 
@@ -48,12 +57,10 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.lg,
     color: '#7F1D1D',
     textAlign: 'center',
+    maxWidth: 500,
   },
-  tap: {
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.sm,
-    color: '#7F1D1D',
-    marginTop: Spacing.sm,
-    opacity: 0.6,
+  cancelBtn: {
+    marginTop: Spacing.lg,
+    minWidth: 180,
   },
 });

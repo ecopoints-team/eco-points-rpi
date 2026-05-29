@@ -44,7 +44,8 @@ export default function QRScanScreen() {
   return (
     <BackgroundGlow style={styles.container}>
       <LogoHeader />
-      <Text style={styles.title}>Scan your EcoPoints QR Code</Text>
+      <Text style={styles.title}>Show your QR Code</Text>
+      <Text style={styles.hint}>QR Scanner Activated</Text>
 
       <View style={styles.cameraWrapper}>
         {scanning ? (
