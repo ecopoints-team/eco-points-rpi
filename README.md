@@ -6,11 +6,10 @@ Complete setup guide for installing, configuring, and running the EcoPoints Reve
 
 ## 🏗️ System Architecture
 
-The EcoPoints RVM system consists of three core components:
+The EcoPoints RVM system is designed with a unified, production-ready architecture:
 
-1. **GPIO Bridge (`gpio-bridge/`)**: A lightweight Python service that interfaces with physical sensors on the Raspberry Pi 5 GPIO pins and broadcasts hardware events (bottle insertion, door status, storage level) via WebSockets.
-2. **Edge Client Firmware (`rvm_edge_client/`)**: The central Python controller daemon. It manages the state machine, processes API transactions with the EcoPoints Cloud Backend, handles mock simulations, and coordinates UI transitions.
-3. **Kiosk UI (`rvm_edge_client/ui/`)**: A React Native (Expo) web application that serves as the touch-screen interface for users to start sessions, view transaction details, and earn points.
+1. **Edge Client Firmware (`rvm_edge_client/`)**: The core Python controller daemon. It directly interfaces with physical Raspberry Pi 5 GPIO pins (handling bottle insertion, door sensors, and storage level), processes real camera input using OpenCV, classifies beverage bottles via a trained YOLOv8 model (`best.pt`), handles backend API synchronization, and coordinates UI transitions.
+2. **Kiosk UI (`rvm_edge_client/ui/`)**: A React Native (Expo) web application that serves as the touch-screen interface for users to scan QR codes, view deposit statistics, and complete transactions.
 
 ```
        ┌────────────────────────┐
@@ -20,23 +19,18 @@ The EcoPoints RVM system consists of three core components:
                    │ HTTP API
        ┌───────────▼────────────┐
        │  Edge Client Firmware  │
-       │       (main.py)        │
+       │  (main.py + GPIO + CV) │
        └───────────▲────────────┘
                    │ WebSockets (Port 8765)
 ┌──────────────────▼──────────────────┐
 │              Kiosk UI               │
 │        (React Native / Expo)        │
-└──────────────────▲──────────────────┘
-                   │ WebSockets (Port 8765)
-       ┌───────────▼────────────┐
-       │      GPIO Bridge       │
-       │    (ws_server.py)      │
-       └───────────▲────────────┘
-                   │ Physical GPIO Pins
-       ┌───────────▼────────────┐
-       │   Sensors & Hardware   │
-       └────────────────────────┘
+└─────────────────────────────────────┘
 ```
+
+> [!NOTE]
+> **GPIO Bridge (`gpio-bridge/`)**: The separate bridge service is no longer required in active production. GPIO listening has been integrated directly into the `main.py` daemon to avoid WebSocket port conflicts. It is kept in the repository for developer reference only.
+
 
 ---
 
@@ -115,7 +109,6 @@ Make sure you have the following installed on your Windows machine:
    - `BACKEND_URL`: URL of the cloud backend (e.g., `http://127.0.0.1:5000`)
    - `MACHINE_ID`: Unique machine ID (e.g., `RVM-PU-01`)
    - `LOCATION`: Location description (e.g., `Institute of Technology`)
-   - `CLI_MODE`: Set to `false` for UI-driven mode, or `true` to run terminal-only mock simulation.
 
 ---
 
@@ -137,13 +130,13 @@ Make sure you have the following installed on your Windows machine:
 To develop and test on your computer without physical sensors, run the system in **Simulation (Development) Mode**.
 
 ### 1. Run the Firmware Simulation
-Open a Command Prompt, navigate to the `rvm_edge_client` directory, activate the environment, and start the simulation:
+Open a Command Prompt, navigate to the `rvm_edge_client` directory, activate the environment, and start the controller:
 ```cmd
 cd rvm_edge_client
 call venv\Scripts\activate
-python main.py --cli
+python main.py
 ```
-*Note: In CLI mode, you can manually trigger events like scans, door state, and sensor pulses via terminal prompt inputs (1 for Yes/High, 0 for No/Low).*
+*Note: Because `RPi.GPIO` and cameras are typically absent on development PCs, the script automatically falls back to simulating computer vision models and uses the UI's simulation button for triggers.*
 
 ### 2. Start the Kiosk UI
 Open another Command Prompt, navigate to the `ui` directory, and start the web development server:
@@ -151,21 +144,15 @@ Open another Command Prompt, navigate to the `ui` directory, and start the web d
 cd rvm_edge_client\ui
 npm run web
 ```
-This will automatically compile and serve the frontend. Open your web browser at `http://localhost:8081`.
+This will automatically compile and serve the frontend. Open your web browser at `http://localhost:8081`. You can trigger bottle deposits using the **"Simulate: Bottle Inserted"** button at the bottom-right corner of the active session screen.
 
 ---
 
 ## ⚙️ Raspberry Pi Production Deployment
 
-On the actual Raspberry Pi 5 with physical hardware connected, you will use Linux Terminal/Bash.
+On the actual Raspberry Pi 5 with physical hardware connected, you will use the Linux Terminal/Bash.
 
 ### 1. Run Services
-- **Start GPIO Bridge**:
-  ```bash
-  cd gpio-bridge
-  source venv/bin/activate
-  python ws_server.py
-  ```
 - **Start Firmware Daemon**:
   ```bash
   cd rvm_edge_client
@@ -180,29 +167,12 @@ On the actual Raspberry Pi 5 with physical hardware connected, you will use Linu
 
 ### 2. Auto-Start on Boot (systemd)
 
-#### GPIO Bridge Service
-Create `/etc/systemd/system/ecopoints-gpio.service`:
-```ini
-[Unit]
-Description=EcoPoints GPIO Bridge Service
-After=network.target
-
-[Service]
-ExecStart=/home/pi/eco-points-rpi/gpio-bridge/venv/bin/python /home/pi/eco-points-rpi/gpio-bridge/ws_server.py
-WorkingDirectory=/home/pi/eco-points-rpi/gpio-bridge
-Restart=always
-User=pi
-
-[Install]
-WantedBy=multi-user.target
-```
-
 #### Firmware Daemon Service
 Create `/etc/systemd/system/ecopoints-firmware.service`:
 ```ini
 [Unit]
 Description=EcoPoints Edge Client Firmware Daemon
-After=ecopoints-gpio.service
+After=network.target
 
 [Service]
 ExecStart=/home/pi/eco-points-rpi/rvm_edge_client/venv/bin/python /home/pi/eco-points-rpi/rvm_edge_client/main.py
@@ -214,11 +184,11 @@ User=pi
 WantedBy=multi-user.target
 ```
 
-Enable and start the services:
+Enable and start the service:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable ecopoints-gpio.service ecopoints-firmware.service
-sudo systemctl start ecopoints-gpio.service ecopoints-firmware.service
+sudo systemctl enable ecopoints-firmware.service
+sudo systemctl start ecopoints-firmware.service
 ```
 
 #### Auto-Start Chromium Browser in Kiosk Mode
