@@ -5,6 +5,7 @@ import LogoHeader from '../components/LogoHeader';
 import RecyclingIcon from '../components/RecyclingIcon';
 import { useKiosk } from '../context/KioskContext';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 
 export default function IdleScreen() {
   const { dispatch } = useKiosk();
@@ -13,7 +14,12 @@ export default function IdleScreen() {
     <TouchableOpacity
       style={styles.touchable}
       activeOpacity={1}
-      onPress={() => dispatch({ type: 'WAKE' })}
+      onPress={() => {
+        dispatch({ type: 'WAKE' });
+        if (!DEV_MODE) {
+          sendGPIOEvent({ action: 'WAKE' });
+        }
+      }}
     >
       <BackgroundGlow style={styles.container}>
         <LogoHeader />

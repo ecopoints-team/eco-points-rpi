@@ -9,12 +9,35 @@ import asyncio
 import threading
 import websockets
 import queue
+import hashlib
+import hmac
 from dotenv import load_dotenv
 
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:5000")
 MACHINE_ID = os.getenv("MACHINE_ID", "RVM-PU-01")
 LOCATION = os.getenv("LOCATION", "Institute of Technology")
+API_KEY = os.getenv("API_KEY", "")
+QR_HMAC_SECRET = os.getenv("QR_HMAC_SECRET", "")
+
+def get_signed_qr_payload(qr_data):
+    """Compute and append the 6-char hex HMAC suffix if not already present."""
+    if not qr_data:
+        return qr_data
+    # Strip any "USER:" prefix commonly added by the web profile page
+    if qr_data.startswith("USER:"):
+        qr_data = qr_data[5:]
+    if "." in qr_data:
+        return qr_data
+    if not QR_HMAC_SECRET:
+        return qr_data
+    try:
+        secret_bytes = bytes.fromhex(QR_HMAC_SECRET)
+        digest = hmac.new(secret_bytes, qr_data.encode('utf-8'), hashlib.sha256).hexdigest()
+        return f"{qr_data}.{digest[:6]}"
+    except Exception as e:
+        print(f"Error signing QR payload: {e}")
+        return qr_data
 
 # --- CONFIGURATION ---
 PIN_DOOR_SENSOR = 26
@@ -249,25 +272,60 @@ def run_ecopoints_firmware():
                 if qr_flow_complete == "TIMEOUT" or not scanned_qr_data:
                     break
 
+            signed_payload = get_signed_qr_payload(scanned_qr_data)
+            hw.log("API", f"Scanned QR data: {scanned_qr_data!r}, Signed payload: {signed_payload!r}")
             hw.log("API", f"Verifying QR Token with server at {BACKEND_URL}...")
+            
+            is_valid = False
+            wallet_id = None
+            account_name = "Unknown"
+            headers = {"X-API-Key": API_KEY}
+            
             try:
-                response = requests.post(f"{BACKEND_URL}/api/rpi/session/start", json={
-                    "user_qr": scanned_qr_data,
-                    "machine_uuid": MACHINE_ID
-                })
+                auth_resp = requests.post(f"{BACKEND_URL}/api/rpi/authenticate", json={
+                    "qrPayload": signed_payload,
+                    "machineUuid": MACHINE_ID
+                }, headers=headers)
                 
-                if response.status_code in [200, 201]:
-                    is_valid = True
-                    session_data = response.json()
-                    session_id = session_data.get("session", {}).get("session_id")
-                    account_name = session_data.get("account", {}).get("name", "Unknown")
-                    hw.log("API", f"User {account_name} authenticated. Session {session_id} started.")
-                    ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
+                if auth_resp.status_code in [200, 201]:
+                    auth_data = auth_resp.json()
+                    if auth_data.get("success"):
+                        wallet_id = auth_data.get("walletId")
+                        account_name = auth_data.get("user", {}).get("name", "Unknown")
+                        is_valid = True
+                        hw.log("API", f"User {account_name} authenticated successfully. Wallet ID: {wallet_id}")
+                    else:
+                        hw.log("API", f"Authentication failed: {auth_data.get('error')}")
                 else:
-                    is_valid = False
+                    hw.log("API", f"Authentication failed with status {auth_resp.status_code}: {auth_resp.text}")
             except requests.exceptions.RequestException as e:
-                hw.log("API_ERROR", f"Could not connect to backend: {e}")
+                hw.log("API_ERROR", f"Could not connect to backend during authentication: {e}")
                 is_valid = False
+
+            if is_valid and wallet_id is not None:
+                # Proceed to start session
+                hw.log("API", "Starting recycling session on server...")
+                is_valid = False
+                try:
+                    start_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/start", json={
+                        "machineUuid": MACHINE_ID,
+                        "walletId": wallet_id
+                    }, headers=headers)
+                    
+                    if start_resp.status_code in [200, 201]:
+                        session_data = start_resp.json()
+                        if session_data.get("success"):
+                            session_id = session_data.get("session", {}).get("id")
+                            hw.log("API", f"Session {session_id} started on server.")
+                            ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
+                            is_valid = True
+                        else:
+                            hw.log("API", f"Session start failed: {session_data.get('error')}")
+                    else:
+                        hw.log("API", f"Session start failed with status {start_resp.status_code}: {start_resp.text}")
+                except requests.exceptions.RequestException as e:
+                    hw.log("API_ERROR", f"Could not connect to backend during session start: {e}")
+                    is_valid = False
 
             if not is_valid:
                 hw.display_ui("QR not recognized. Please try again.")
@@ -276,7 +334,7 @@ def run_ecopoints_firmware():
                 qr_flow_complete = "TIMEOUT"
                 break
             else:
-                hw.log("API", "Token Authenticated.")
+                hw.log("API", "Token Authenticated and Session Started.")
                 qr_flow_complete = True
 
         if qr_flow_complete == "TIMEOUT":
@@ -373,22 +431,19 @@ def run_ecopoints_firmware():
 
             hw.log("DB", f"Updating User Session... +{points} pts")
             try:
-                # Send the exact data the RecentActivity.jsx component expects
-                response = requests.post(f"{BACKEND_URL}/api/rpi/item/deposit", json={
-                    "session_id": session_id,
-                    "item_type": "PET Plastic",
-                    "points": points,
-                    "weight_grams": 50,
-                    "brand": "Unknown",
-                    "condition": "Good",
-                    "size_category": "Medium"
-                })
+                response = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/deposit", json={
+                    "machineUuid": MACHINE_ID,
+                    "detectedClass": "PET Plastic",
+                    "confidenceScore": 0.95,
+                    "pointsAwarded": points,
+                    "status": "Accepted"
+                }, headers={"X-API-Key": API_KEY})
                 if response.status_code in [200, 201]:
                     hw.log("DB", "Points successfully synced to the cloud.")
                 else:
-                    hw.log("DB", "Failed to sync points. Saving to local cache.")
+                    hw.log("DB", f"Failed to sync points. Server returned {response.status_code}: {response.text}")
             except Exception as e:
-                hw.log("API_ERROR", "Server unreachable.")
+                hw.log("API_ERROR", f"Server unreachable: {e}")
             hw.display_ui(f"Transaction Successful + {points} Points!", "VERIFY_SUCCESS", {"points": points, "bottleCount": 1})
             hw.display_ui(f"Your Total Points : {user_total_points} pts")
 
@@ -425,14 +480,14 @@ def run_ecopoints_firmware():
             hw.log("DB", "Committing session to database...")
             if session_id:
                 try:
-                    end_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/end", json={
-                        "session_id": session_id,
-                        "machine_uuid": MACHINE_ID
-                    })
+                    end_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/end", json={
+                        "machineUuid": MACHINE_ID,
+                        "status": "completed"
+                    }, headers={"X-API-Key": API_KEY})
                     if end_resp.status_code in [200, 201]:
                         hw.log("DB", "Session successfully committed.")
                     else:
-                        hw.log("DB", f"Failed to commit session. Server returned {end_resp.status_code}")
+                        hw.log("DB", f"Failed to commit session. Server returned {end_resp.status_code}: {end_resp.text}")
                 except Exception as e:
                     hw.log("API_ERROR", f"Failed to end session: {e}")
             hw.log("SYS", "Session Finalized.")

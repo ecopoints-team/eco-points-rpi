@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { KioskState, KioskAction } from '../context/KioskContext';
+import { DEV_MODE, sendGPIOEvent } from './useGPIOBridge';
 
 const TIMERS: Partial<Record<KioskState, number>> = {
   START: 60_000,
@@ -32,7 +33,14 @@ export function useKioskTimer(
     const action = ACTIONS[screen];
 
     if (duration && action) {
-      timerRef.current = setTimeout(() => dispatch(action), duration);
+      timerRef.current = setTimeout(() => {
+        if (screen === 'ACCEPTED' || screen === 'REJECTED') {
+          if (!DEV_MODE) {
+            sendGPIOEvent({ action: 'FINISH' });
+          }
+        }
+        dispatch(action);
+      }, duration);
     }
 
     return () => {
