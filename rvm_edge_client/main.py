@@ -9,44 +9,40 @@ import asyncio
 import threading
 import websockets
 import queue
-import hashlib
-import hmac
 from dotenv import load_dotenv
 
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:5000")
 MACHINE_ID = os.getenv("MACHINE_ID", "RVM-PU-01")
 LOCATION = os.getenv("LOCATION", "Institute of Technology")
-API_KEY = os.getenv("API_KEY", "")
-QR_HMAC_SECRET = os.getenv("QR_HMAC_SECRET", "")
 
-def get_signed_qr_payload(qr_data):
-    """Compute and append the 6-char hex HMAC suffix if not already present."""
-    if not qr_data:
-        return qr_data
-    # Strip any "USER:" prefix commonly added by the web profile page
-    if qr_data.startswith("USER:"):
-        qr_data = qr_data[5:]
-    if "." in qr_data:
-        return qr_data
-    if not QR_HMAC_SECRET:
-        return qr_data
-    try:
-        secret_bytes = bytes.fromhex(QR_HMAC_SECRET)
-        digest = hmac.new(secret_bytes, qr_data.encode('utf-8'), hashlib.sha256).hexdigest()
-        return f"{qr_data}.{digest[:6]}"
-    except Exception as e:
-        print(f"Error signing QR payload: {e}")
-        return qr_data
+# --- HARDWARE LIBRARIES (CONDITIONAL IMPORT FOR PORTABILITY) ---
+try:
+    import RPi.GPIO as GPIO
+    GPIO_AVAILABLE = True
+except ImportError:
+    GPIO_AVAILABLE = False
 
-# --- CONFIGURATION ---
-PIN_DOOR_SENSOR = 26
-PIN_STORAGE_LEVEL = 29
-# PIN LIMIT SWITCH 1 = 24
-# PIN LIMIT SWITCH 2 = 31
-# PIN PWM = 11
-# PIN DIRECTION = 12
-# PIN InProgressIndicator = 15
+try:
+    import cv2
+    from ultralytics import YOLO
+    CV_AVAILABLE = True
+except ImportError:
+    CV_AVAILABLE = False
+
+# --- CONFIGURATION (BCM Pin assignments matching README.md) ---
+PIN_BOTTLE_INSERTED = 17  # HIGH pulse when bottle is detected by sensor
+PIN_BIN_FULL        = 27  # HIGH while bin-full sensor is triggered
+PIN_DOOR_OPEN       = 22  # HIGH while door-open sensor is triggered
+
+# Global flag to track physical bottle insertion events from GPIO interrupt
+physical_bottle_inserted = False
+
+def gpio_callback(channel):
+    global physical_bottle_inserted
+    print(f"[GPIO] Interrupt: Physical bottle insertion detected on BCM Pin {channel}!")
+    physical_bottle_inserted = True
+
 
 # --- UI BRIDGE ---
 class UIBridge:
@@ -120,45 +116,98 @@ ui_bridge = UIBridge()
 ui_bridge.start()
 
 
-
 class HardwareInterface:
     """
-    Simulates the low-level hardware interactions.
+    Manages low-level hardware interactions (GPIO, Camera, CV model).
     """
+    def __init__(self):
+        self.gpio_available = GPIO_AVAILABLE
+        self.cv_available = CV_AVAILABLE
+        self.model = None
+        self._setup_gpio()
+        self._setup_cv()
 
     def log(self, system, message):
         """Prints formatted logs like a real system terminal."""
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         print(f"[{timestamp}] [{system:<8}] : {message}")
-        time.sleep(0.3)  # Artificial latency for realism
+        time.sleep(0.1)  # Minimal latency for premium feel
 
     def boot_sequence(self):
         print("\n" + "=" * 50)
-        print("      ECO-POINTS EMBEDDED SYSTEM v2.4.1      ")
+        print("      ECO-POINTS EMBEDDED SYSTEM v3.0.0      ")
         print("=" * 50)
         self.log("KERNEL", "Initializing system...")
-        time.sleep(0.5)
-        self.log("GPIO", "Setting up pin modes...")
-        self.log("DRIVER", "Loading Camera Module (OpenCV)...")
-        self.log("DRIVER", "Calibrating Load Cells...")
+        time.sleep(0.3)
+        self.log("GPIO", "Initializing pins & interrupts...")
+        if self.gpio_available:
+            self.log("GPIO", "RPi.GPIO initialized successfully.")
+        else:
+            self.log("GPIO", "RPi.GPIO not found. Running in simulation fallback mode.")
+        
+        self.log("CV", "Loading object detection engine...")
+        if self.cv_available and self.model:
+            self.log("CV", "YOLOv8 weights successfully loaded.")
+        elif self.cv_available:
+            self.log("CV", "OpenCV / YOLO imported, but best.pt model file missing. Running mock CV.")
+        else:
+            self.log("CV", "OpenCV or Ultralytics libraries missing. Running mock CV.")
+            
         self.log("NET", "Connecting to cloud database... SUCCESS")
         self.log("SYS", "System Ready. Standing by.")
         print("-" * 50)
 
-    def read_sensor_override(self, sensor_name, prompt):
-        """
-        Simulates reading a hardware sensor.
+    def _setup_gpio(self):
+        if not self.gpio_available:
+            return
+        
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(PIN_BOTTLE_INSERTED, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            GPIO.setup(PIN_BIN_FULL,        GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            GPIO.setup(PIN_DOOR_OPEN,       GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            
+            # Setup hardware interrupt callback for the bottle insertion pulse
+            GPIO.add_event_detect(
+                PIN_BOTTLE_INSERTED, 
+                GPIO.RISING, 
+                callback=gpio_callback, 
+                bouncetime=500
+            )
+        except Exception as e:
+            print(f"[GPIO_ERR] Failed to configure GPIO pins: {e}")
+            self.gpio_available = False
 
-        """
-        print(f"\n   >>> [DEBUG INTERRUPT] Reading {sensor_name}...")
-        while True:
-            val = input(f"   >>> SIGNAL SIMULATION: {prompt} (1=Yes/High, 0=No/Low): ").strip()
-            if val == '1':
-                return True
-            elif val == '0':
-                return False
+    def _setup_cv(self):
+        if not self.cv_available:
+            return
+        
+        try:
+            model_path = os.path.join(os.path.dirname(__file__), "models", "best.pt")
+            if os.path.exists(model_path):
+                # Suppress verbose YOLO logging during start
+                self.model = YOLO(model_path)
             else:
-                print("   >>> ERROR: Invalid Signal. Input 1 or 0.")
+                self.model = None
+        except Exception as e:
+            print(f"[CV_ERR] Failed to load YOLOv8 model: {e}")
+            self.model = None
+
+    def is_bin_full(self) -> bool:
+        if not self.gpio_available:
+            return False
+        try:
+            return GPIO.input(PIN_BIN_FULL) == GPIO.HIGH
+        except Exception:
+            return False
+
+    def is_door_open(self) -> bool:
+        if not self.gpio_available:
+            return False
+        try:
+            return GPIO.input(PIN_DOOR_OPEN) == GPIO.HIGH
+        except Exception:
+            return False
 
     def display_ui(self, text, event=None, data=None):
         """Simulates sending text to the LCD screen and broadcasts to WebSocket."""
@@ -166,33 +215,83 @@ class HardwareInterface:
         if event:
             ui_bridge.broadcast(event, data)
 
-    def spin_motor(self, duration=1):
-        self.log("MOTOR", "Actuator active...")
+    def spin_motor(self, duration=1.2):
+        self.log("MOTOR", "Activating sorting actuator/conveyor...")
         time.sleep(duration)
-        self.log("MOTOR", "Position reached.")
+        self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
+
+    def verify_bottle(self):
+        """
+        Uses the camera and YOLOv8 model to verify and classify the inserted bottle.
+        Returns a tuple: (is_valid, brand_name, size_category)
+        """
+        if not self.cv_available or self.model is None:
+            self.log("CV", "[SIMULATION] Running mock CV verification...")
+            time.sleep(1.5)
+            # Simulate a successful classification with typical class values
+            sim_brand = random.choice(["Le Minerale", "Nature spring", "Summit", "Wilkins pure"])
+            sim_size = random.choice(["350ml", "500ml", "600ml", "1000ml"])
+            return True, sim_brand, sim_size
+
+        self.log("CAM", "Starting camera module...")
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            self.log("CAM_ERR", "Webcam not detected. Fallback: Simulating scan...")
+            time.sleep(1.5)
+            return True, "Le Minerale", "600ml"
+
+        # Give the camera sensor time to adjust to light levels
+        time.sleep(0.5)
+        ret, frame = cap.read()
+        cap.release()
+
+        if not ret:
+            self.log("CAM_ERR", "Failed to capture frame from webcam. Fallback: Simulating scan...")
+            return True, "Nature spring", "500ml"
+
+        self.log("CV", "Analyzing image frame with YOLOv8...")
+        try:
+            # Run prediction with a confidence threshold of 50%
+            results = self.model.predict(frame, conf=0.5, verbose=False)
+            for result in results:
+                boxes = result.boxes
+                for box in boxes:
+                    cls_id = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    class_name = self.model.names[cls_id]
+                    
+                    self.log("CV", f"Match: '{class_name}' with confidence {conf:.2f}")
+                    
+                    # Parse brand and size from name (e.g. 'Le Minerale 600ml')
+                    parts = class_name.split()
+                    if len(parts) >= 2:
+                        size = parts[-1]
+                        brand = " ".join(parts[:-1])
+                    else:
+                        brand = class_name
+                        size = "Medium"
+                        
+                    return True, brand, size
+        except Exception as e:
+            self.log("CV_ERR", f"Prediction execution failed: {e}")
+
+        self.log("CV", "No valid beverage bottles recognized in the chute.")
+        return False, "None", "None"
 
 
-# --- MAIN LOGIC  ---
+# --- MAIN FIRMWARE PROCESS ---
 def run_ecopoints_firmware():
-    # Check if CLI mode is enabled via environment variable or command line argument
-    cli_mode = os.getenv("CLI_MODE", "false").lower() in ("true", "1", "yes")
-    if "--cli" in sys.argv:
-        cli_mode = True
-
+    global physical_bottle_inserted
+    
     hw = HardwareInterface()
     hw.boot_sequence()
-
-    if cli_mode:
-        hw.log("SYS", "Running in CLI/Terminal simulation mode (no UI required).")
-    else:
-        hw.log("SYS", "Running in UI-driven mode (WebSocket UI required).")
 
     user_total_points = 0
 
     while True:
         # --- STATE: IDLE / WELCOME ---
-        # If in UI-driven mode, wait for at least one Kiosk UI client to connect first
-        if not cli_mode and not ui_bridge.clients:
+        # Wait for at least one Kiosk UI client to connect first
+        if not ui_bridge.clients:
             hw.log("SYS", "Waiting for Kiosk UI client to connect on ws://localhost:8765 ...")
             while not ui_bridge.clients:
                 time.sleep(1)
@@ -200,36 +299,42 @@ def run_ecopoints_firmware():
 
         hw.log("SYS", "State: IDLE")
 
-        # Check Storage Sensor
-        hw.log("SENSOR", f"Reading PIN_{PIN_STORAGE_LEVEL} (Storage Level)...")
-        # Just a simulation of sensors. It is fully automatic in UI-driven mode.
-        if not cli_mode:
-            is_full = False
-        else:
-            is_full = hw.read_sensor_override("Storage Sensor", "Is the bin FULL?")
-
+        # Initial check for full storage capacity
+        is_full = hw.is_bin_full()
         if is_full:
             hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
-            hw.log("SYS", "Error: Capacity Reached. Entering sleep mode for 5s.")
+            hw.log("SYS", "Capacity Reached. System suspended for 5s.")
             time.sleep(5)
-            continue  # Restart loop
+            continue  # Restart loop to check if bin was cleared
 
         hw.display_ui("Press Start Button", "GO_IDLE")
         ui_bridge.clear_queue()
-        if cli_mode:
-            input("   >>> [BUTTON INPUT] Press ENTER to simulate Start Button click...")
-        else:
-            hw.log("SYS", "Waiting for WAKE event (touchscreen tap)...")
-            while True:
-                # If we lost client connection in UI mode, wait for reconnection
-                if not ui_bridge.clients:
-                    hw.log("SYS", "UI client disconnected. Waiting for reconnection...")
-                    while not ui_bridge.clients:
-                        time.sleep(1)
-                    hw.log("SYS", "UI client reconnected.")
-                msg = ui_bridge.get_message(timeout=0.5)
-                if msg and msg.get("action") == "WAKE":
-                    break
+        
+        # Wait for the screen tap wake-up event or bin full triggers
+        hw.log("SYS", "Waiting for WAKE event (touchscreen tap)...")
+        bin_became_full = False
+        while True:
+            if not ui_bridge.clients:
+                hw.log("SYS", "UI client disconnected. Waiting for reconnection...")
+                while not ui_bridge.clients:
+                    time.sleep(1)
+                hw.log("SYS", "UI client reconnected.")
+                
+            # If the bin becomes full while idling, suspend system
+            if hw.is_bin_full():
+                hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
+                hw.log("SYS", "Capacity Reached while idling. Suspending...")
+                time.sleep(5)
+                bin_became_full = True
+                break
+                
+            msg = ui_bridge.get_message(timeout=0.5)
+            if msg and msg.get("action") == "WAKE":
+                break
+                
+        if bin_became_full:
+            continue
+
         ui_bridge.broadcast("WAKE")
 
         # --- STATE: QR SCANNING ---
@@ -238,225 +343,198 @@ def run_ecopoints_firmware():
 
         qr_flow_complete = False
         session_id = None
+        
         while not qr_flow_complete:
             scanned_qr_data = None
-            if cli_mode:
-                # Simulate waiting for scan
-                time.sleep(1)
-                is_scanned = hw.read_sensor_override("Camera", "Did the user SCAN the QR?")
-
-                if not is_scanned:
-                    hw.log("TIMER", "Timeout reached (120s).")
-                    hw.log("SYS", "Resetting session...")
+            hw.log("SYS", "Waiting for QR code scan from Kiosk UI...")
+            while True:
+                if not ui_bridge.clients:
+                    hw.log("SYS", "UI client disconnected during scan.")
                     qr_flow_complete = "TIMEOUT"
                     break
-                
-                # Simulate user input
-                scanned_qr_data = input("   >>> [SCAN SIMULATION] Enter user ID (or press enter for dummy_user): ").strip()
-                if not scanned_qr_data: scanned_qr_data = "dummy_user_123"
-            else:
-                hw.log("SYS", "Waiting for QR code scan from Kiosk UI...")
-                while True:
-                    if not ui_bridge.clients:
-                        hw.log("SYS", "UI client disconnected during scan.")
+                msg = ui_bridge.get_message(timeout=0.5)
+                if msg:
+                    if msg.get("action") == "CANCEL":
                         qr_flow_complete = "TIMEOUT"
                         break
-                    msg = ui_bridge.get_message(timeout=0.5)
-                    if msg:
-                        if msg.get("action") == "CANCEL":
-                            qr_flow_complete = "TIMEOUT"
-                            break
-                        elif msg.get("action") == "QR_SCANNED":
-                            scanned_qr_data = msg.get("qr_data")
-                            break
-                if qr_flow_complete == "TIMEOUT" or not scanned_qr_data:
-                    break
+                    elif msg.get("action") == "QR_SCANNED":
+                        scanned_qr_data = msg.get("qr_data")
+                        break
+                        
+            if qr_flow_complete == "TIMEOUT" or not scanned_qr_data:
+                break
 
-            signed_payload = get_signed_qr_payload(scanned_qr_data)
-            hw.log("API", f"Scanned QR data: {scanned_qr_data!r}, Signed payload: {signed_payload!r}")
-            hw.log("API", f"Verifying QR Token with server at {BACKEND_URL}...")
-            
-            is_valid = False
-            wallet_id = None
-            account_name = "Unknown"
-            headers = {"X-API-Key": API_KEY}
-            
+            hw.log("API", f"Verifying QR Token with backend server at {BACKEND_URL}...")
             try:
-                auth_resp = requests.post(f"{BACKEND_URL}/api/rpi/authenticate", json={
-                    "qrPayload": signed_payload,
-                    "machineUuid": MACHINE_ID
-                }, headers=headers)
+                response = requests.post(f"{BACKEND_URL}/api/rpi/session/start", json={
+                    "user_qr": scanned_qr_data,
+                    "machine_uuid": MACHINE_ID
+                })
                 
-                if auth_resp.status_code in [200, 201]:
-                    auth_data = auth_resp.json()
-                    if auth_data.get("success"):
-                        wallet_id = auth_data.get("walletId")
-                        account_name = auth_data.get("user", {}).get("name", "Unknown")
-                        is_valid = True
-                        hw.log("API", f"User {account_name} authenticated successfully. Wallet ID: {wallet_id}")
-                    else:
-                        hw.log("API", f"Authentication failed: {auth_data.get('error')}")
+                if response.status_code in [200, 201]:
+                    session_data = response.json()
+                    session_id = session_data.get("session", {}).get("session_id")
+                    account_name = session_data.get("account", {}).get("name", "Unknown")
+                    hw.log("API", f"User {account_name} authenticated. Session {session_id} started.")
+                    ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
+                    qr_flow_complete = True
                 else:
-                    hw.log("API", f"Authentication failed with status {auth_resp.status_code}: {auth_resp.text}")
+                    hw.display_ui("QR not recognized. Please try again.")
+                    hw.log("WARN", f"Backend rejected token. Status code: {response.status_code}")
+                    ui_bridge.broadcast("LOGIN_DENIED")
+                    qr_flow_complete = "TIMEOUT"
+                    break
             except requests.exceptions.RequestException as e:
-                hw.log("API_ERROR", f"Could not connect to backend during authentication: {e}")
-                is_valid = False
-
-            if is_valid and wallet_id is not None:
-                # Proceed to start session
-                hw.log("API", "Starting recycling session on server...")
-                is_valid = False
-                try:
-                    start_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/start", json={
-                        "machineUuid": MACHINE_ID,
-                        "walletId": wallet_id
-                    }, headers=headers)
-                    
-                    if start_resp.status_code in [200, 201]:
-                        session_data = start_resp.json()
-                        if session_data.get("success"):
-                            session_id = session_data.get("session", {}).get("id")
-                            hw.log("API", f"Session {session_id} started on server.")
-                            ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
-                            is_valid = True
-                        else:
-                            hw.log("API", f"Session start failed: {session_data.get('error')}")
-                    else:
-                        hw.log("API", f"Session start failed with status {start_resp.status_code}: {start_resp.text}")
-                except requests.exceptions.RequestException as e:
-                    hw.log("API_ERROR", f"Could not connect to backend during session start: {e}")
-                    is_valid = False
-
-            if not is_valid:
-                hw.display_ui("QR not recognized. Please try again.")
-                hw.log("WARN", "Invalid Token detected.")
+                hw.log("API_ERR", f"Could not connect to backend: {e}")
+                hw.display_ui("Network error. Please try again later.")
                 ui_bridge.broadcast("LOGIN_DENIED")
                 qr_flow_complete = "TIMEOUT"
                 break
-            else:
-                hw.log("API", "Token Authenticated and Session Started.")
-                qr_flow_complete = True
 
         if qr_flow_complete == "TIMEOUT":
             continue
 
-        # --- STATE: TRANSACTION START ---
+        # --- STATE: TRANSACTION LOOP ---
         transacting = True
+        physical_bottle_inserted = False  # Reset flag for transaction start
 
         while transacting:
             hw.display_ui("Please insert bottles in place", "READY")
+            
+            # Verify safety door is closed before opening actuator
+            if hw.is_door_open():
+                hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
+                hw.log("MECH", "Safety door open detected. Suspending...")
+                while hw.is_door_open():
+                    time.sleep(0.5)
+                hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
+                hw.log("MECH", "Safety door closed. Resuming...")
+
             hw.log("MECH", "Unlocking Safety Door...")
             hw.log("MECH", "Door Unlocked.")
 
-            if not cli_mode:
-                hw.log("SYS", "Waiting for BOTTLE_INSERTED event from Kiosk UI...")
-                user_inserted = False
+            hw.log("SYS", "Waiting for bottle insertion (hardware sensor or UI simulator)...")
+            user_inserted = False
+            
+            while True:
+                if not ui_bridge.clients:
+                    hw.log("SYS", "UI client disconnected during transaction.")
+                    user_inserted = False
+                    break
+                
+                # Check for live door openings
+                if hw.is_door_open():
+                    hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
+                    hw.log("MECH", "Door opened during active session!")
+                    while hw.is_door_open():
+                        time.sleep(0.5)
+                    hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
+                    hw.display_ui("Please insert bottles in place", "READY")
+                
+                # Check for physical hardware sensor interrupt
+                if physical_bottle_inserted:
+                    hw.log("GPIO", "Bottle insertion detected via hardware pulse.")
+                    physical_bottle_inserted = False  # Consume trigger
+                    user_inserted = True
+                    break
+                
+                msg = ui_bridge.get_message(timeout=0.2)
+                if msg:
+                    if msg.get("action") == "CANCEL":
+                        user_inserted = False
+                        break
+                    elif msg.get("action") == "BOTTLE_INSERTED":
+                        hw.log("SYS", "Bottle insertion triggered via UI simulation button.")
+                        user_inserted = True
+                        break
+            
+            if not user_inserted:
+                hw.log("SYS", "Transaction finished or canceled by user.")
+                transacting = False
+                break
+                
+            # Transition screen to verifying
+            hw.display_ui("Processing...", "BOTTLE_INSERTED")
+            hw.log("MECH", "Locking Safety Door...")
+            hw.log("SCALE", "Taring scale...")
+            hw.log("PROC", "Analyzing object in chute...")
+            
+            # Spin conveyor motor to move bottle into camera viewport
+            hw.spin_motor(duration=1.2)
+            
+            # Execute CV classification
+            is_valid, brand_name, size_category = hw.verify_bottle()
+            
+            if not is_valid:
+                hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
+                hw.display_ui("Transaction Denied: Invalid Item Detected", "VERIFY_FAIL", {
+                    "reason": "Non-recyclable material or unrecognized bottle brand."
+                })
+                hw.log("MECH", "Unlocking door for removal...")
+                
+                # Wait for user to decide to try again or finish
+                hw.log("SYS", "Waiting for user action on rejection screen...")
+                retry = False
                 while True:
                     if not ui_bridge.clients:
-                        hw.log("SYS", "UI client disconnected during transaction.")
-                        user_inserted = False
                         break
                     msg = ui_bridge.get_message(timeout=0.5)
                     if msg:
-                        if msg.get("action") == "CANCEL":
-                            user_inserted = False
+                        if msg.get("action") == "REPEAT_READY":
+                            retry = True
                             break
-                        elif msg.get("action") == "BOTTLE_INSERTED":
-                            user_inserted = True
+                        elif msg.get("action") in ("FINISH", "CANCEL"):
+                            retry = False
                             break
-                if not user_inserted:
-                    hw.log("SYS", "Transaction cancelled.")
+                
+                if retry:
+                    continue
+                else:
                     transacting = False
                     break
+            else:
+                hw.log("INFO", f"Verified successfully: {brand_name} ({size_category})")
                 
-                # Auto-simulate hardware transitions since user inserted bottle via UI
-                hw.log("INFO", f"GPIO_{PIN_DOOR_SENSOR} State: CLOSED (Auto-detected)")
-                hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-                hw.log("MECH", "Locking Safety Door...")
-                hw.log("SCALE", "Taring scale...")
-                hw.log("PROC", "Verifying Objects...")
-                hw.display_ui("Processing...", "BOTTLE_INSERTED")
-                hw.spin_motor(duration=1.5)
-                hw.log("INFO", "Object Classification: PET BOTTLE (Accepted)")
-            else:
-                # --- DOOR CHECK LOOP ---
-                while True:
-                    # Simulating a magnetic reed switch on the door
-                    is_closed = hw.read_sensor_override("Door Sensor", "Is the door CLOSED?")
-                    if not is_closed:
-                        hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
-                        hw.log("WARN", f"GPIO_{PIN_DOOR_SENSOR} State: OPEN")
+                # Map sizes to points values
+                points = 10
+                if "1000ml" in size_category.lower() or "1000mL" in size_category:
+                    points = 15
+                elif "500ml" in size_category.lower() or "600ml" in size_category.lower() or "500mL" in size_category:
+                    points = 10
+                elif "330ml" in size_category.lower() or "350ml" in size_category.lower():
+                    points = 5
+
+                user_total_points += points
+                
+                hw.log("DB", f"Sending deposit log: {brand_name} (+{points} pts)")
+                try:
+                    response = requests.post(f"{BACKEND_URL}/api/rpi/item/deposit", json={
+                        "session_id": session_id,
+                        "item_type": "PET Plastic",
+                        "points": points,
+                        "weight_grams": 50,
+                        "brand": brand_name,
+                        "condition": "Good",
+                        "size_category": size_category
+                    })
+                    if response.status_code in [200, 201]:
+                        hw.log("DB", "Deposit log successfully synced to backend.")
                     else:
-                        hw.log("INFO", f"GPIO_{PIN_DOOR_SENSOR} State: CLOSED")
-                        hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-                        hw.log("MECH", "Locking Safety Door...")
-                        break
-
-                # --- PLATFORM EMPTY CHECK ---
-                hw.log("SCALE", "Taring scale...")
-                is_empty = hw.read_sensor_override("Weight Scale", "Is the platform EMPTY (User put nothing in)?")
-
-                if is_empty:
-                    hw.log("TIMER", "Activity Timeout. No object detected.")
-                    hw.log("SYS", "Resetting...")
-                    transacting = False
-                    break  # Goes back to main "Welcome" loop
-
-                # --- VERIFICATION ---
-                hw.log("PROC", "Verifying Objects...")
-                hw.display_ui("Processing...", "BOTTLE_INSERTED")
-                hw.spin_motor(duration=1.5)  # Simulate conveyor/scanner moving
-
-                # --- VALIDITY CHECK LOOP ---
-                # Loops back to verify if invalid
-                bottles_valid = False
-                while not bottles_valid:
-                    # Computer Vision simulation
-                    bottles_valid = hw.read_sensor_override("CV Model", "Are the bottles VALID (Plastic/Glass)?")
-
-                    if not bottles_valid:
-                        hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
-                        hw.display_ui("Transaction Denied: Invalid Item Detected", "VERIFY_FAIL", {"reason": "Non-recyclable material detected."})
-                        hw.display_ui("Please remove invalid item")
-
-                        hw.log("MECH", "Unlocking door for removal...")
-                        input("   >>> [USER ACTION] Press ENTER once you have removed the item...")
-                        hw.log("MECH", "Door Locked. Retrying scan...")
-                    else:
-                        hw.log("INFO", "Object Classification: PET BOTTLE (Accepted)")
-
-            # --- CALCULATION ---
-            points = 10
-            user_total_points += points
-
-            hw.log("DB", f"Updating User Session... +{points} pts")
-            try:
-                response = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/deposit", json={
-                    "machineUuid": MACHINE_ID,
-                    "detectedClass": "PET Plastic",
-                    "confidenceScore": 0.95,
-                    "pointsAwarded": points,
-                    "status": "Accepted"
-                }, headers={"X-API-Key": API_KEY})
-                if response.status_code in [200, 201]:
-                    hw.log("DB", "Points successfully synced to the cloud.")
-                else:
-                    hw.log("DB", f"Failed to sync points. Server returned {response.status_code}: {response.text}")
-            except Exception as e:
-                hw.log("API_ERROR", f"Server unreachable: {e}")
-            hw.display_ui(f"Transaction Successful + {points} Points!", "VERIFY_SUCCESS", {"points": points, "bottleCount": 1})
-            hw.display_ui(f"Your Total Points : {user_total_points} pts")
-
-            # --- TRANSACT ANOTHER? ---
-            hw.log("SYS", "Waiting for user decision...")
-            if cli_mode:
-                again = hw.read_sensor_override("Touchscreen", "Does user press 'Transact Another'?")
-            else:
-                hw.log("SYS", "Waiting for user selection on Kiosk UI...")
+                        hw.log("DB", f"Failed to sync points: Server returned {response.status_code}")
+                except Exception as e:
+                    hw.log("API_ERR", f"Could not sync points to backend: {e}")
+                
+                hw.display_ui(f"Transaction Successful + {points} Points!", "VERIFY_SUCCESS", {
+                    "points": points, 
+                    "bottleCount": 1
+                })
+                hw.display_ui(f"Your Total Points : {user_total_points} pts")
+                
+                # Wait for user choice (another bottle or finish)
+                hw.log("SYS", "Waiting for user action (Repeat/Finish)...")
                 again = None
                 while True:
                     if not ui_bridge.clients:
-                        hw.log("SYS", "UI client disconnected during decision.")
                         again = False
                         break
                     msg = ui_bridge.get_message(timeout=0.5)
@@ -467,40 +545,46 @@ def run_ecopoints_firmware():
                         elif msg.get("action") == "FINISH":
                             again = False
                             break
+                
+                if again:
+                    hw.log("SYS", "User selected transact again. Looping...")
+                    continue
+                else:
+                    transacting = False
 
-            if again:
-                hw.log("SYS", "Looping transaction...")
-                continue
-            else:
-                transacting = False
+        # --- STATE: END OF SESSION ---
+        hw.display_ui(f"Your Total Points : {user_total_points} pts")
+        hw.log("DB", "Committing session to database...")
+        if session_id:
+            try:
+                end_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/end", json={
+                    "session_id": session_id,
+                    "machine_uuid": MACHINE_ID
+                })
+                if end_resp.status_code in [200, 201]:
+                    hw.log("DB", "Session successfully committed.")
+                else:
+                    hw.log("DB", f"Failed to commit session: Server returned {end_resp.status_code}")
+            except Exception as e:
+                hw.log("API_ERR", f"Failed to finalize session: {e}")
+                
+        hw.log("SYS", "Session Finalized.")
+        hw.display_ui("Thank you for using EcoPoints.", "ADVANCE_THANK_YOU")
 
-        # --- END OF SESSION ---
-        if qr_flow_complete != "TIMEOUT":
-            hw.display_ui(f"Your Total Points : {user_total_points} pts")
-            hw.log("DB", "Committing session to database...")
-            if session_id:
-                try:
-                    end_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/end", json={
-                        "machineUuid": MACHINE_ID,
-                        "status": "completed"
-                    }, headers={"X-API-Key": API_KEY})
-                    if end_resp.status_code in [200, 201]:
-                        hw.log("DB", "Session successfully committed.")
-                    else:
-                        hw.log("DB", f"Failed to commit session. Server returned {end_resp.status_code}: {end_resp.text}")
-                except Exception as e:
-                    hw.log("API_ERROR", f"Failed to end session: {e}")
-            hw.log("SYS", "Session Finalized.")
-            hw.display_ui("Thank you for using EcoPoints.", "ADVANCE_THANK_YOU")
-
-            # Reset local variables
-            user_total_points = 0
-            hw.log("SYS", "Clearing cache...")
-            time.sleep(2)
+        # Reset session point trackers
+        user_total_points = 0
+        time.sleep(2)
 
 
 if __name__ == "__main__":
     try:
         run_ecopoints_firmware()
     except KeyboardInterrupt:
-        print("\n[KERNEL PANIC] Force Shutdown initiated by user.")
+        print("\n[SYSTEM] Shutdown initiated by user.")
+    finally:
+        if GPIO_AVAILABLE:
+            try:
+                GPIO.cleanup()
+                print("[GPIO] Pins returned to safe state.")
+            except Exception as e:
+                print(f"[GPIO_ERR] Cleanup failed: {e}")
