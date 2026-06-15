@@ -242,40 +242,56 @@ class HardwareInterface:
 
         # Give the camera sensor time to adjust to light levels
         time.sleep(0.5)
-        ret, frame = cap.read()
-        cap.release()
 
-        if not ret:
-            self.log("CAM_ERR", "Failed to capture frame from webcam. Fallback: Simulating scan...")
-            return True, "Nature spring", "500ml"
-
-        self.log("CV", "Analyzing image frame with YOLOv8...")
+        self.log("CV", "Analyzing image frames with YOLOv8 to confirm bottle...")
+        
+        detections = []
         try:
-            # Run prediction with a confidence threshold of 50%
-            results = self.model.predict(frame, conf=0.5, verbose=False)
-            for result in results:
-                boxes = result.boxes
-                for box in boxes:
-                    cls_id = int(box.cls[0])
-                    conf = float(box.conf[0])
-                    class_name = self.model.names[cls_id]
-                    
-                    self.log("CV", f"Match: '{class_name}' with confidence {conf:.2f}")
-                    
-                    # Parse brand and size from name (e.g. 'Le Minerale 600ml')
-                    parts = class_name.split()
-                    if len(parts) >= 2:
-                        size = parts[-1]
-                        brand = " ".join(parts[:-1])
-                    else:
-                        brand = class_name
-                        size = "Medium"
+            # Read up to 10 frames to ensure we are sure it's a bottle
+            for _ in range(10):
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+                
+                # Higher confidence threshold to avoid phantom detections (blank space)
+                results = self.model.predict(frame, conf=0.75, verbose=False)
+                for result in results:
+                    for box in result.boxes:
+                        cls_id = int(box.cls[0])
+                        conf = float(box.conf[0])
+                        class_name = self.model.names[cls_id]
+                        detections.append((class_name, conf))
+                        break # Only take the first confident box per frame
                         
-                    return True, brand, size
+                time.sleep(0.1) # Small delay between frames
         except Exception as e:
             self.log("CV_ERR", f"Prediction execution failed: {e}")
+        finally:
+            cap.release()
 
-        self.log("CV", "No valid beverage bottles recognized in the chute.")
+        # Check if we have enough consistent detections (at least 3 frames)
+        if len(detections) >= 3:
+            class_counts = {}
+            for cls_name, conf in detections:
+                class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
+                
+            best_class = max(class_counts, key=class_counts.get)
+            best_conf = max([conf for name, conf in detections if name == best_class])
+            
+            self.log("CV", f"Confirmed match: '{best_class}' (seen {class_counts[best_class]} times, max conf {best_conf:.2f})")
+            
+            # Parse brand and size from name (e.g. 'Le Minerale 600ml')
+            parts = best_class.split()
+            if len(parts) >= 2:
+                size = parts[-1]
+                brand = " ".join(parts[:-1])
+            else:
+                brand = best_class
+                size = "Medium"
+                
+            return True, brand, size
+
+        self.log("CV", "No valid beverage bottles consistently recognized in the chute.")
         return False, "None", "None"
 
 
@@ -497,25 +513,44 @@ def run_ecopoints_firmware():
                 
                 # Map sizes to points values
                 points = 10
-                if "1000ml" in size_category.lower() or "1000mL" in size_category:
-                    points = 15
-                elif "500ml" in size_category.lower() or "600ml" in size_category.lower() or "500mL" in size_category:
-                    points = 10
-                elif "330ml" in size_category.lower() or "350ml" in size_category.lower():
+                cls_lower = f"{brand_name} {size_category}".lower()
+                
+                if "extra small" in cls_lower or "xs" in cls_lower.split():
+                    points = 3
+                    size_category = "Extra Small"
+                elif "small" in cls_lower or "s" in cls_lower.split():
                     points = 5
+                    size_category = "Small"
+                elif "medium" in cls_lower or "m" in cls_lower.split():
+                    points = 8
+                    size_category = "Medium"
+                elif "large" in cls_lower or "l" in cls_lower.split():
+                    points = 10
+                    size_category = "Large"
+                else:
+                    if "1000ml" in cls_lower or "750ml" in cls_lower or "551ml" in cls_lower:
+                        points = 10
+                        size_category = "Large"
+                    elif "500ml" in cls_lower or "600ml" in cls_lower or "550ml" in cls_lower or "351ml" in cls_lower:
+                        points = 8
+                        size_category = "Medium"
+                    elif "350ml" in cls_lower or "330ml" in cls_lower or "290ml" in cls_lower:
+                        points = 5
+                        size_category = "Small"
+                    elif "289ml" in cls_lower or "250ml" in cls_lower or "125ml" in cls_lower:
+                        points = 3
+                        size_category = "Extra Small"
 
                 user_total_points += points
                 
                 hw.log("DB", f"Sending deposit log: {brand_name} (+{points} pts)")
                 try:
-                    response = requests.post(f"{BACKEND_URL}/api/rpi/item/deposit", json={
-                        "session_id": session_id,
-                        "item_type": "PET Plastic",
-                        "points": points,
-                        "weight_grams": 50,
-                        "brand": brand_name,
-                        "condition": "Good",
-                        "size_category": size_category
+                    response = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/deposit", json={
+                        "machineUuid": MACHINE_ID,
+                        "detectedClass": brand_name,
+                        "confidenceScore": 0.95,
+                        "pointsAwarded": points,
+                        "status": "Accepted"
                     })
                     if response.status_code in [200, 201]:
                         hw.log("DB", "Deposit log successfully synced to backend.")
