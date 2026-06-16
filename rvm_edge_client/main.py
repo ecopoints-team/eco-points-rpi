@@ -15,6 +15,7 @@ load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:5000")
 MACHINE_ID = os.getenv("MACHINE_ID", "RVM-PU-01")
 LOCATION = os.getenv("LOCATION", "Institute of Technology")
+API_KEY = os.getenv("API_KEY", "")
 
 # --- HARDWARE LIBRARIES (CONDITIONAL IMPORT FOR PORTABILITY) ---
 try:
@@ -243,7 +244,7 @@ class HardwareInterface:
         # Give the camera sensor time to adjust to light levels
         time.sleep(0.5)
 
-        self.log("CV", "Analyzing image frames with YOLOv8 to confirm bottle...")
+        self.log("CV", "Analyzing image frames with YOLOv11 to confirm bottle...")
         
         detections = []
         try:
@@ -253,8 +254,12 @@ class HardwareInterface:
                 if not ret:
                     continue
                 
-                # Higher confidence threshold to avoid phantom detections (blank space)
-                results = self.model.predict(frame, conf=0.75, verbose=False)
+                # Show camera feed for debugging
+                cv2.imshow("RVM Camera Feed - Verifying", frame)
+                cv2.waitKey(1)
+                
+                # Use a reasonable confidence threshold
+                results = self.model.predict(frame, conf=0.55, verbose=False)
                 for result in results:
                     for box in result.boxes:
                         cls_id = int(box.cls[0])
@@ -268,6 +273,7 @@ class HardwareInterface:
             self.log("CV_ERR", f"Prediction execution failed: {e}")
         finally:
             cap.release()
+            cv2.destroyAllWindows()
 
         # Check if we have enough consistent detections (at least 3 frames)
         if len(detections) >= 3:
@@ -382,21 +388,38 @@ def run_ecopoints_firmware():
 
             hw.log("API", f"Verifying QR Token with backend server at {BACKEND_URL}...")
             try:
-                response = requests.post(f"{BACKEND_URL}/api/rpi/session/start", json={
-                    "user_qr": scanned_qr_data,
-                    "machine_uuid": MACHINE_ID
+                # 1. Authenticate QR Code
+                auth_resp = requests.post(f"{BACKEND_URL}/api/rpi/authenticate", headers={"X-API-Key": API_KEY}, json={
+                    "qrPayload": scanned_qr_data,
+                    "machineUuid": MACHINE_ID
                 })
                 
-                if response.status_code in [200, 201]:
-                    session_data = response.json()
-                    session_id = session_data.get("session", {}).get("session_id")
-                    account_name = session_data.get("account", {}).get("name", "Unknown")
-                    hw.log("API", f"User {account_name} authenticated. Session {session_id} started.")
-                    ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
-                    qr_flow_complete = True
+                if auth_resp.status_code in [200, 201]:
+                    auth_data = auth_resp.json()
+                    wallet_id = auth_data.get("walletId")
+                    account_name = auth_data.get("user", {}).get("name", "Unknown")
+                    
+                    # 2. Start Session
+                    session_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/start", headers={"X-API-Key": API_KEY}, json={
+                        "walletId": wallet_id,
+                        "machineUuid": MACHINE_ID
+                    })
+                    
+                    if session_resp.status_code in [200, 201]:
+                        session_data = session_resp.json()
+                        session_id = session_data.get("session", {}).get("id")
+                        hw.log("API", f"User {account_name} authenticated. Session {session_id} started.")
+                        ui_bridge.broadcast("LOGIN_SUCCESS", {"userName": account_name})
+                        qr_flow_complete = True
+                    else:
+                        hw.display_ui("Session start error.")
+                        hw.log("WARN", f"Failed to start session. Status code: {session_resp.status_code}")
+                        ui_bridge.broadcast("LOGIN_DENIED")
+                        qr_flow_complete = "TIMEOUT"
+                        break
                 else:
                     hw.display_ui("QR not recognized. Please try again.")
-                    hw.log("WARN", f"Backend rejected token. Status code: {response.status_code}")
+                    hw.log("WARN", f"Backend rejected token. Status code: {auth_resp.status_code}")
                     ui_bridge.broadcast("LOGIN_DENIED")
                     qr_flow_complete = "TIMEOUT"
                     break
@@ -429,8 +452,15 @@ def run_ecopoints_firmware():
             hw.log("MECH", "Unlocking Safety Door...")
             hw.log("MECH", "Door Unlocked.")
 
-            hw.log("SYS", "Waiting for bottle insertion (hardware sensor or UI simulator)...")
+            hw.log("SYS", "Waiting for bottle insertion (Camera Auto-Detection, Hardware Sensor, or UI Simulator)...")
             user_inserted = False
+            
+            # Start camera for auto-detection
+            cap = None
+            consecutive_detections = 0
+            if hw.cv_available and hw.model:
+                hw.log("CAM", "Starting camera module for auto-detection...")
+                cap = cv2.VideoCapture(0)
             
             while True:
                 if not ui_bridge.clients:
@@ -454,7 +484,36 @@ def run_ecopoints_firmware():
                     user_inserted = True
                     break
                 
-                msg = ui_bridge.get_message(timeout=0.2)
+                # Check Camera feed for bottle detection
+                if cap and cap.isOpened():
+                    ret, frame = cap.read()
+                    if ret:
+                        cv2.imshow("RVM Camera Feed - Waiting for Bottle", frame)
+                        cv2.waitKey(1)
+                        
+                        detected_in_frame = False
+                        results = hw.model.predict(frame, conf=0.6, verbose=False)
+                        for result in results:
+                            if len(result.boxes) > 0:
+                                detected_in_frame = True
+                                break
+                                
+                        if detected_in_frame:
+                            consecutive_detections += 1
+                            if consecutive_detections >= 4:
+                                cls_id = int(results[0].boxes[0].cls[0])
+                                class_name = hw.model.names[cls_id]
+                                hw.log("CV", f"Auto-detected {class_name} consistently! Triggering insertion.")
+                                user_inserted = True
+                                break
+                        else:
+                            consecutive_detections = 0
+                
+                if user_inserted:
+                    break
+                
+                # Very short timeout so the camera read isn't blocked
+                msg = ui_bridge.get_message(timeout=0.01)
                 if msg:
                     if msg.get("action") == "CANCEL":
                         user_inserted = False
@@ -463,6 +522,12 @@ def run_ecopoints_firmware():
                         hw.log("SYS", "Bottle insertion triggered via UI simulation button.")
                         user_inserted = True
                         break
+            
+            # Release camera so verify_bottle can safely reopen it
+            if cap:
+                cap.release()
+                cv2.destroyAllWindows()
+                time.sleep(0.5)  # Give OS time to free the camera resource
             
             if not user_inserted:
                 hw.log("SYS", "Transaction finished or canceled by user.")
@@ -545,7 +610,7 @@ def run_ecopoints_firmware():
                 
                 hw.log("DB", f"Sending deposit log: {brand_name} (+{points} pts)")
                 try:
-                    response = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/deposit", json={
+                    response = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/deposit", headers={"X-API-Key": API_KEY}, json={
                         "machineUuid": MACHINE_ID,
                         "detectedClass": brand_name,
                         "confidenceScore": 0.95,
@@ -592,9 +657,9 @@ def run_ecopoints_firmware():
         hw.log("DB", "Committing session to database...")
         if session_id:
             try:
-                end_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/end", json={
-                    "session_id": session_id,
-                    "machine_uuid": MACHINE_ID
+                end_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/end", headers={"X-API-Key": API_KEY}, json={
+                    "status": "completed",
+                    "machineUuid": MACHINE_ID
                 })
                 if end_resp.status_code in [200, 201]:
                     hw.log("DB", "Session successfully committed.")
