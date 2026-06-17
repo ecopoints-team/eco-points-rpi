@@ -673,7 +673,7 @@ def run_ecopoints_firmware():
 
         # Reset session point trackers
         user_total_points = 0
-        time.sleep(2)
+        time.sleep(8)
 
 
 if __name__ == "__main__":

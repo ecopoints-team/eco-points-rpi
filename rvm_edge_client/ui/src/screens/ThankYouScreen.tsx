@@ -39,93 +39,100 @@ export default function ThankYouScreen() {
         <Text style={styles.heading}>Thank you for using EcoPoints!</Text>
 
         {/* Receipt Card */}
-        <View style={styles.receiptCard}>
-          {/* Top Perforation */}
-          <View style={styles.perforation}>
-            {Array.from({ length: 18 }).map((_, i) => (
-              <View key={i} style={styles.perforationDot} />
-            ))}
-          </View>
-
-          {/* Logo Section */}
-          <View style={styles.logoSection}>
-            <Image
-              source={require('../../assets/favicon.png')}
-              style={styles.receiptLogo}
-              resizeMode="contain"
-            />
-            <Text style={styles.receiptBrand}>ECOPOINTS</Text>
-            <Text style={styles.receiptSubtitle}>Official Transaction</Text>
-          </View>
-
-          {/* Dashed Divider */}
-          <View style={styles.dashedDivider} />
-
-          {/* Key-Value Rows */}
-          <View style={styles.rowsSection}>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Description</Text>
-              <Text style={styles.rowValue}>Bottle Recycling</Text>
+        {totalPoints > 0 ? (
+          <View style={styles.receiptCard}>
+            {/* Top Perforation */}
+            <View style={styles.perforation}>
+              {Array.from({ length: 18 }).map((_, i) => (
+                <View key={i} style={styles.perforationDot} />
+              ))}
             </View>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Date</Text>
-              <Text style={styles.rowValueMono}>{dateStr}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Time</Text>
-              <Text style={styles.rowValueMono}>{timeStr}</Text>
-            </View>
-            {totalBottles > 0 && (
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Qty Recycled</Text>
-                <Text style={styles.rowValueBold}>{totalBottles} Units</Text>
-              </View>
-            )}
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Reference</Text>
-              <Text style={styles.rowValueMono}>{refCode}</Text>
-            </View>
-          </View>
 
-          {/* Dashed Divider */}
-          <View style={styles.dashedDivider} />
-
-          {/* Points Total Box */}
-          <View style={styles.totalBox}>
-            <Text style={styles.totalLabel}>POINTS TOTAL</Text>
-            <Text style={styles.totalValue}>+{totalPoints}</Text>
-          </View>
-
-          {/* Thank You Message */}
-          <View style={styles.messageSection}>
-            <Text style={styles.thankYouMsg}>
-              Thank you for helping us keep the campus green!
-            </Text>
-            <Text style={styles.verificationCode}>
-              Verification Code: {refCode}
-            </Text>
-          </View>
-
-          {/* Barcode Mockup */}
-          <View style={styles.barcodeRow}>
-            {Array.from({ length: 15 }).map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.barcodeLine,
-                  { width: i % 4 === 0 ? 3 : 1.5 },
-                ]}
+            {/* Logo Section */}
+            <View style={styles.logoSection}>
+              <Image
+                source={require('../../assets/favicon.png')}
+                style={styles.receiptLogo}
+                resizeMode="contain"
               />
-            ))}
-          </View>
+              <Text style={styles.receiptBrand}>ECOPOINTS</Text>
+              <Text style={styles.receiptSubtitle}>Official Transaction</Text>
+            </View>
 
-          {/* Bottom Jagged Edge */}
-          <View style={styles.jaggedEdge}>
-            {Array.from({ length: 20 }).map((_, i) => (
-              <View key={i} style={styles.jaggedTriangle} />
-            ))}
+            {/* Dashed Divider */}
+            <View style={styles.dashedDivider} />
+
+            {/* Key-Value Rows */}
+            <View style={styles.rowsSection}>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Description</Text>
+                <Text style={styles.rowValue}>Bottle Recycling</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Date</Text>
+                <Text style={styles.rowValueMono}>{dateStr}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Time</Text>
+                <Text style={styles.rowValueMono}>{timeStr}</Text>
+              </View>
+              {totalBottles > 0 && (
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Qty Recycled</Text>
+                  <Text style={styles.rowValueBold}>{totalBottles} Units</Text>
+                </View>
+              )}
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Reference</Text>
+                <Text style={styles.rowValueMono}>{refCode}</Text>
+              </View>
+            </View>
+
+            {/* Dashed Divider */}
+            <View style={styles.dashedDivider} />
+
+            {/* Points Total Box */}
+            <View style={styles.totalBox}>
+              <Text style={styles.totalLabel}>POINTS TOTAL</Text>
+              <Text style={styles.totalValue}>+{totalPoints}</Text>
+            </View>
+
+            {/* Thank You Message */}
+            <View style={styles.messageSection}>
+              <Text style={styles.thankYouMsg}>
+                Thank you for helping us keep the campus green!
+              </Text>
+              <Text style={styles.verificationCode}>
+                Verification Code: {refCode}
+              </Text>
+            </View>
+
+            {/* Barcode Mockup */}
+            <View style={styles.barcodeRow}>
+              {Array.from({ length: 15 }).map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.barcodeLine,
+                    { width: i % 4 === 0 ? 3 : 1.5 },
+                  ]}
+                />
+              ))}
+            </View>
+
+            {/* Bottom Jagged Edge */}
+            <View style={styles.jaggedEdge}>
+              {Array.from({ length: 20 }).map((_, i) => (
+                <View key={i} style={styles.jaggedTriangle} />
+              ))}
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={[styles.receiptCard, { padding: 30, alignItems: 'center' }]}>
+            <Text style={{ fontFamily: Fonts.bodyBold, fontSize: 18, color: Colors.heading, textAlign: 'center', marginBottom: 10 }}>Session Ended</Text>
+            <Text style={{ fontFamily: Fonts.body, fontSize: 14, color: Colors.body, textAlign: 'center' }}>No valid items were recycled in this session.</Text>
+          </View>
+        )}
 
         {/* Anchor Hint text permanently to the bottom */}
         <Text style={styles.tapHint}>Tap anywhere to continue</Text>
