@@ -35,6 +35,18 @@ export default function ReadyScreen() {
       {/* Main user actions */}
       <View style={styles.actionsContainer}>
         <GlowButton
+          label="Manual: Bottle Inserted & Door Closed"
+          variant="primary"
+          onPress={() => {
+            dispatch({ type: 'BOTTLE_INSERTED' });
+            if (!DEV_MODE) {
+              sendGPIOEvent({ action: 'BOTTLE_INSERTED' });
+            }
+          }}
+          style={[styles.btn, { minWidth: 400, paddingVertical: 20 }]}
+        />
+        
+        <GlowButton
           label="Cancel"
           variant="outline"
           onPress={() => {
@@ -46,20 +58,6 @@ export default function ReadyScreen() {
           style={styles.btn}
         />
       </View>
-
-      {/* Dev/prototype manual trigger - tucked into bottom right corner */}
-      <TouchableOpacity
-        style={styles.simButton}
-        activeOpacity={0.8}
-        onPress={() => {
-          dispatch({ type: 'BOTTLE_INSERTED' });
-          if (!DEV_MODE) {
-            sendGPIOEvent({ action: 'BOTTLE_INSERTED' });
-          }
-        }}
-      >
-        <Text style={styles.simButtonText}>Simulate: Bottle Inserted</Text>
-      </TouchableOpacity>
     </BackgroundGlow>
   );
 }
@@ -96,24 +94,6 @@ const styles = StyleSheet.create({
   },
   btn: { 
     minWidth: 200,
-  },
-  simButton: {
-    position: 'absolute',
-    bottom: Spacing.md,
-    right: Spacing.md,
-    backgroundColor: 'rgba(6, 78, 59, 0.12)', // Subtle glassmorphic background
-    borderColor: 'rgba(6, 78, 59, 0.3)',
-    borderWidth: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    zIndex: 100,
-  },
-  simButtonText: {
-    fontFamily: Fonts.mono,
-    fontSize: FontSizes.xs - 2, 
-    color: Colors.primaryDark,
-    fontWeight: 'bold',
   },
 });
 
