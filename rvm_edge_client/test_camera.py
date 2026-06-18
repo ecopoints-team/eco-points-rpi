@@ -18,7 +18,8 @@ def main():
     try:
         from picamera2 import Picamera2
         cam = Picamera2()
-        cam.configure(cam.create_video_configuration({"size": (640, 480)}))
+        config = cam.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)})
+        cam.configure(config)
         cam.start()
         use_picam2 = True
     except ImportError:
