@@ -8,7 +8,7 @@ Complete setup guide for installing, configuring, and running the EcoPoints Reve
 
 The EcoPoints RVM system is designed with a unified, production-ready architecture:
 
-1. **Edge Client Firmware (`rvm_edge_client/`)**: The core Python controller daemon. It directly interfaces with physical Raspberry Pi 5 GPIO pins (handling bottle insertion, door sensors, and storage level), processes real camera input using OpenCV, classifies beverage bottles via a trained YOLOv8 model (`best.pt`), handles backend API synchronization, and coordinates UI transitions.
+1. **Edge Client Firmware (`rvm_edge_client/`)**: The core Python controller daemon. It directly interfaces with physical Raspberry Pi 5 GPIO pins (handling bottle insertion, door sensors, and storage level), processes real camera input using OpenCV, classifies beverage bottles via a trained YOLOv11 model (`best.pt`), handles backend API synchronization, and coordinates UI transitions.
 2. **Kiosk UI (`rvm_edge_client/ui/`)**: A React Native (Expo) web application that serves as the touch-screen interface for users to scan QR codes, view deposit statistics, and complete transactions.
 
 ```

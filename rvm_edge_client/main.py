@@ -155,7 +155,7 @@ class HardwareInterface:
         
         self.log("CV", "Loading object detection engine...")
         if self.cv_available and self.model:
-            self.log("CV", "YOLOv8 weights successfully loaded.")
+            self.log("CV", "YOLOv11 weights successfully loaded.")
         elif self.cv_available:
             self.log("CV", "OpenCV / YOLO imported, but best.pt model file missing. Running mock CV.")
         else:
@@ -203,7 +203,7 @@ class HardwareInterface:
             else:
                 self.model = None
         except Exception as e:
-            print(f"[CV_ERR] Failed to load YOLOv8 model: {e}")
+            print(f"[CV_ERR] Failed to load YOLOv11 model: {e}")
             self.model = None
 
     def is_bin_full(self) -> bool:
@@ -286,7 +286,7 @@ class HardwareInterface:
 
     def verify_bottle(self):
         """
-        Uses the camera and YOLOv8 model to verify and classify the inserted bottle.
+        Uses the camera and YOLOv11 model to verify and classify the inserted bottle.
         Returns a tuple: (is_valid, brand_name, size_category)
         """
         if not self.cv_available or self.model is None:
@@ -330,8 +330,16 @@ class HardwareInterface:
                         class_name = self.model.names[cls_id]
                         detections.append((class_name, conf))
                         break # Only take the first confident box per frame
+                
+                # Break early if we have 3 consistent detections
+                if len(detections) >= 3:
+                    class_counts = {}
+                    for cls_name, _ in detections:
+                        class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
+                    if max(class_counts.values()) >= 3:
+                        break
                         
-                time.sleep(0.1) # Small delay between frames
+                time.sleep(0.05) # Small delay between frames
         except Exception as e:
             self.log("CV_ERR", f"Prediction execution failed: {e}")
         finally:
