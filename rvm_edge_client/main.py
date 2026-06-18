@@ -392,7 +392,7 @@ def run_ecopoints_firmware():
             time.sleep(5)
             continue  # Restart loop to check if bin was cleared
 
-        hw.display_ui("Press Start Button", "GO_IDLE")
+        hw.display_ui("Press Start Button", "SYSTEM_CLEAR")
         ui_bridge.clear_queue()
         
         # Wait for the screen tap wake-up event or bin full triggers
