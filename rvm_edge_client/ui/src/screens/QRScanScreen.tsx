@@ -12,17 +12,18 @@ export default function QRScanScreen() {
   const { dispatch } = useKiosk();
   const [scanning, setScanning] = useState(true);
   const [inputValue, setInputValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const scanned = useRef(false);
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     const focusInterval = setInterval(() => {
-      if (scanning && inputRef.current) {
+      if (scanning && inputRef.current && !isFocused) {
         inputRef.current.focus();
       }
-    }, 500);
+    }, 1000);
     return () => clearInterval(focusInterval);
-  }, [scanning]);
+  }, [scanning, isFocused]);
 
   const handleBarCodeScanned = async (data: string) => {
     if (!scanning || scanned.current) return;
@@ -60,12 +61,18 @@ export default function QRScanScreen() {
 
       <View style={styles.cameraWrapper}>
         {scanning ? (
-          <>
+          <TouchableOpacity 
+            activeOpacity={1} 
+            onPress={() => inputRef.current?.focus()}
+            style={{ flex: 1 }}
+          >
             <TextInput
               ref={inputRef}
               value={inputValue}
               onChangeText={setInputValue}
               onSubmitEditing={onSubmitEditing}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               autoFocus={true}
               showSoftInputOnFocus={false}
               autoCapitalize="none"
@@ -73,7 +80,11 @@ export default function QRScanScreen() {
               style={styles.hiddenInput}
             />
             <View style={styles.scanIndicator}>
-              <Text style={styles.scanIndicatorText}>Waiting for Scanner...</Text>
+              {isFocused ? (
+                <Text style={styles.scanIndicatorTextReady}>Scanner Ready</Text>
+              ) : (
+                <Text style={styles.scanIndicatorTextInactive}>Scanner Inactive (Tap to Fix)</Text>
+              )}
               {inputValue.length > 0 && (
                 <View style={{ alignItems: 'center', marginTop: 10 }}>
                   <Text style={styles.debugText}>Scanned: {inputValue}</Text>
@@ -88,7 +99,7 @@ export default function QRScanScreen() {
             <View style={[styles.corner, styles.topRight]} />
             <View style={[styles.corner, styles.bottomLeft]} />
             <View style={[styles.corner, styles.bottomRight]} />
-          </>
+          </TouchableOpacity>
         ) : (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={Colors.primary} />
@@ -146,10 +157,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scanIndicatorText: {
+  scanIndicatorTextReady: {
     fontFamily: Fonts.bodyBold,
     fontSize: FontSizes.md,
-    color: Colors.primary,
+    color: '#10B981',
+  },
+  scanIndicatorTextInactive: {
+    fontFamily: Fonts.bodyBold,
+    fontSize: FontSizes.md,
+    color: '#EF4444',
   },
   debugText: {
     fontFamily: Fonts.body,
