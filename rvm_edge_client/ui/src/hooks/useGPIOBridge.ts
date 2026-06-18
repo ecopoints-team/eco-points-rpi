@@ -4,7 +4,7 @@ import { KioskAction } from '../context/KioskContext';
 const WS_URL = 'ws://localhost:8765';
 
 // Set to false to enable WS connection with Python main.py
-export const DEV_MODE = false;
+export const DEV_MODE = process.env.EXPO_PUBLIC_DEV_MODE === 'true';
 
 type GPIOEventPayload = {
   event: string;

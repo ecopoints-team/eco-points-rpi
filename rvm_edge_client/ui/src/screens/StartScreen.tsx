@@ -106,8 +106,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   logo: {
-    width: scale(80),
-    height: scale(80),
+    width: scale(150),
+    height: scale(150),
     marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
   },
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   },
   startBtn: {
     marginTop: Spacing.lg,
-    minWidth: scale(180),
+    minWidth: scale(240),
     paddingVertical: Spacing.sm,
   },
   // Bin full notification badge
