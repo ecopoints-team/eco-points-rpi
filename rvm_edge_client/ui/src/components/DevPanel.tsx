@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Pressable,
 } from 'react-native';
 import { useKiosk, KioskState } from '../context/KioskContext';
 import { Colors, Fonts, FontSizes } from '../constants/theme';
@@ -36,6 +37,17 @@ const MOCK_PAYLOAD = {
 
 export default function DevPanel() {
   const { screen: current, payload, dispatch } = useKiosk();
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!isOpen) {
+    return (
+      <Pressable
+        style={styles.hoverTarget}
+        onHoverIn={() => setIsOpen(true)}
+        onPress={() => setIsOpen(true)}
+      />
+    );
+  }
 
   return (
     <View 
@@ -43,9 +55,9 @@ export default function DevPanel() {
       pointerEvents="box-none"
     >
       {/* Indicator tab */}
-      <View style={styles.tab}>
-        <Text style={styles.tabText}>▼ DEV MODE ACTIVE | Bin: {payload.isBinFull ? '🔴 FULL' : '🟢 OK'}</Text>
-      </View>
+      <TouchableOpacity style={styles.tab} onPress={() => setIsOpen(false)}>
+        <Text style={styles.tabText}>▼ DEV MODE ACTIVE (Tap to hide) | Bin: {payload.isBinFull ? '🔴 FULL' : '🟢 OK'}</Text>
+      </TouchableOpacity>
 
       <ScrollView
         horizontal
