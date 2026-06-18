@@ -20,7 +20,8 @@ API_KEY = os.getenv("API_KEY", "")
 # --- HARDWARE LIBRARIES (CONDITIONAL IMPORT FOR PORTABILITY) ---
 try:
     import RPi.GPIO as GPIO
-    GPIO_AVAILABLE = True
+    # Allow overriding GPIO availability via .env if hardware is missing
+    GPIO_AVAILABLE = os.getenv("DISABLE_GPIO", "false").lower() != "true"
 except ImportError:
     GPIO_AVAILABLE = False
 
