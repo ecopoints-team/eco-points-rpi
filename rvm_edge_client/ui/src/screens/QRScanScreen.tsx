@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TextInput, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TextInput, Keyboard, TouchableOpacity } from 'react-native';
 import BackgroundGlow from '../components/BackgroundGlow';
 import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
@@ -74,6 +74,14 @@ export default function QRScanScreen() {
             />
             <View style={styles.scanIndicator}>
               <Text style={styles.scanIndicatorText}>Waiting for Scanner...</Text>
+              {inputValue.length > 0 && (
+                <View style={{ alignItems: 'center', marginTop: 10 }}>
+                  <Text style={styles.debugText}>Scanned: {inputValue}</Text>
+                  <TouchableOpacity onPress={onSubmitEditing} style={styles.manualSubmitBtn}>
+                    <Text style={styles.manualSubmitText}>Submit Scan</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
             {/* Reticle corners */}
             <View style={[styles.corner, styles.topLeft]} />
@@ -142,6 +150,24 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bodyBold,
     fontSize: FontSizes.md,
     color: Colors.primary,
+  },
+  debugText: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.sm,
+    color: '#10B981',
+    marginTop: Spacing.sm,
+  },
+  manualSubmitBtn: {
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: 8,
+  },
+  manualSubmitText: {
+    fontFamily: Fonts.bodyBold,
+    fontSize: FontSizes.sm,
+    color: '#FFFFFF',
   },
   hint: {
     fontFamily: Fonts.body,
