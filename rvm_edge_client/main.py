@@ -16,6 +16,7 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:5000")
 MACHINE_ID = os.getenv("MACHINE_ID", "RVM-PU-01")
 LOCATION = os.getenv("LOCATION", "Institute of Technology")
 API_KEY = os.getenv("API_KEY", "")
+SHOW_CV_WINDOW = os.getenv("CLI_MODE", "false").lower() == "true"
 
 # --- HARDWARE LIBRARIES (CONDITIONAL IMPORT FOR PORTABILITY) ---
 try:
@@ -318,9 +319,10 @@ class HardwareInterface:
                 # Camera is mounted upside down, rotate it 180 degrees
                 frame = cv2.rotate(frame, cv2.ROTATE_180)
                 
-                # Show camera feed for debugging
-                cv2.imshow("RVM Camera Feed - Verifying", frame)
-                cv2.waitKey(1)
+                # Show camera feed for debugging only if running in CLI mode
+                if SHOW_CV_WINDOW:
+                    cv2.imshow("RVM Camera Feed - Verifying", frame)
+                    cv2.waitKey(1)
                 
                 # Use a reasonable confidence threshold
                 results = self.model.predict(frame, conf=0.55, verbose=False)
@@ -587,8 +589,9 @@ def run_ecopoints_firmware():
                         # Camera is mounted upside down, rotate it 180 degrees
                         frame = cv2.rotate(frame, cv2.ROTATE_180)
                         
-                        cv2.imshow("RVM Camera Feed - Waiting for Bottle", frame)
-                        cv2.waitKey(1)
+                        if SHOW_CV_WINDOW:
+                            cv2.imshow("RVM Camera Feed - Waiting for Bottle", frame)
+                            cv2.waitKey(1)
                         
                         detected_in_frame = False
                         results = hw.model.predict(frame, conf=0.6, verbose=False)

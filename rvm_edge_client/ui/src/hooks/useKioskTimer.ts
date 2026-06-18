@@ -5,10 +5,10 @@ import { DEV_MODE, sendGPIOEvent } from './useGPIOBridge';
 const TIMERS: Partial<Record<KioskState, number>> = {
   START: 60_000,
   ACCEPTED: 8_000,
-  REJECTED: 8_000,
+  REJECTED: 15_000,
   THANK_YOU: 5_000,
-  DENIED: 6_000,
-  BIN_FULL_DENIED: 10_000,
+  DENIED: 15_000,
+  BIN_FULL_DENIED: 15_000,
 };
 
 const ACTIONS: Partial<Record<KioskState, KioskAction>> = {
