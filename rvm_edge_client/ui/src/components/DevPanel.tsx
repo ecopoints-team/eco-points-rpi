@@ -36,31 +36,16 @@ const MOCK_PAYLOAD = {
 
 export default function DevPanel() {
   const { screen: current, payload, dispatch } = useKiosk();
-  const [open, setOpen] = useState(false);
-
-  if (!open) {
-    return (
-      <TouchableOpacity
-        style={styles.hoverTarget}
-        onPress={() => setOpen(true)}
-        // @ts-ignore
-        onMouseEnter={() => setOpen(true)}
-        activeOpacity={1}
-      />
-    );
-  }
 
   return (
     <View 
       style={styles.wrapper} 
       pointerEvents="box-none"
-      // @ts-ignore
-      onMouseLeave={() => setOpen(false)}
     >
-      {/* Toggle tab */}
-      <TouchableOpacity style={styles.tab} onPress={() => setOpen(false)}>
-        <Text style={styles.tabText}>▼ DEV (Leave or tap to hide) | Bin: {payload.isBinFull ? '🔴 FULL' : '🟢 OK'}</Text>
-      </TouchableOpacity>
+      {/* Indicator tab */}
+      <View style={styles.tab}>
+        <Text style={styles.tabText}>▼ DEV MODE ACTIVE | Bin: {payload.isBinFull ? '🔴 FULL' : '🟢 OK'}</Text>
+      </View>
 
       <ScrollView
         horizontal

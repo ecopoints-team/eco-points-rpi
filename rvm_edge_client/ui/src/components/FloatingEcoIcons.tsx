@@ -42,7 +42,7 @@ function generateIconConfigs(count: number): IconConfig[] {
     const seed = (i * 41 + 17) % 100;
     configs.push({
       icon: ECO_ICONS[i % ECO_ICONS.length],
-      size: 14 + (seed % 12),
+      size: scale(30 + (seed % 24)),
       startX: (i * 200 + 100) % 1100,
       duration: 12000 + (seed % 8) * 1000,
       delay: i * 1800,
