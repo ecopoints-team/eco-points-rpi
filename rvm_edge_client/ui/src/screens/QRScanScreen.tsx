@@ -1,6 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TextInput, Keyboard } from 'react-native';
 import BackgroundGlow from '../components/BackgroundGlow';
 import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
@@ -11,19 +10,34 @@ import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
 export default function QRScanScreen() {
   const { dispatch } = useKiosk();
-  const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(true);
+  const [inputValue, setInputValue] = useState('');
   const scanned = useRef(false);
+  const inputRef = useRef<TextInput>(null);
 
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+  useEffect(() => {
+    const focusInterval = setInterval(() => {
+      if (scanning && inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 500);
+    return () => clearInterval(focusInterval);
+  }, [scanning]);
+
+  const handleBarCodeScanned = async (data: string) => {
     if (!scanning || scanned.current) return;
     scanned.current = true;
     setScanning(false);
+    Keyboard.dismiss();
 
     if (DEV_MODE) {
       const result = await loginWithQR(data);
       if (result.success) {
-        dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: result.userName } });
+        if (result.role && ['technician', 'superadmin', 'head_admin'].includes(result.role)) {
+          dispatch({ type: 'ADMIN_LOGIN', payload: { userName: result.userName } });
+        } else {
+          dispatch({ type: 'LOGIN_SUCCESS', payload: { userName: result.userName } });
+        }
       } else {
         dispatch({ type: 'LOGIN_DENIED' });
       }
@@ -32,14 +46,11 @@ export default function QRScanScreen() {
     }
   };
 
-  if (!permission?.granted) {
-    return (
-      <BackgroundGlow style={styles.center}>
-        <Text style={styles.title}>Camera Permission Required</Text>
-        <GlowButton label="Grant Permission" onPress={requestPermission} />
-      </BackgroundGlow>
-    );
-  }
+  const onSubmitEditing = () => {
+    if (inputValue.trim()) {
+      handleBarCodeScanned(inputValue.trim());
+    }
+  };
 
   return (
     <BackgroundGlow style={styles.container}>
@@ -50,11 +61,20 @@ export default function QRScanScreen() {
       <View style={styles.cameraWrapper}>
         {scanning ? (
           <>
-            <CameraView
-              style={styles.camera}
-              onBarcodeScanned={handleBarCodeScanned}
-              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            <TextInput
+              ref={inputRef}
+              value={inputValue}
+              onChangeText={setInputValue}
+              onSubmitEditing={onSubmitEditing}
+              autoFocus={true}
+              showSoftInputOnFocus={false}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.hiddenInput}
             />
+            <View style={styles.scanIndicator}>
+              <Text style={styles.scanIndicatorText}>Waiting for Scanner...</Text>
+            </View>
             {/* Reticle corners */}
             <View style={[styles.corner, styles.topLeft]} />
             <View style={[styles.corner, styles.topRight]} />
@@ -107,7 +127,22 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#000000',
   },
-  camera: { flex: 1 },
+  hiddenInput: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
+  scanIndicator: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanIndicatorText: {
+    fontFamily: Fonts.bodyBold,
+    fontSize: FontSizes.md,
+    color: Colors.primary,
+  },
   hint: {
     fontFamily: Fonts.body,
     fontSize: FontSizes.md,

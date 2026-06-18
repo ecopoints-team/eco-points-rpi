@@ -1,0 +1,21 @@
+[Unit]
+Description=EcoPoints Chromium Kiosk
+Wants=graphical.target ecopoints-frontend.service
+After=graphical.target ecopoints-frontend.service
+
+[Service]
+Type=simple
+User=pi
+# Standard displays for Pi OS
+Environment="DISPLAY=:0"
+Environment="WAYLAND_DISPLAY=wayland-1"
+Environment="XAUTHORITY=/home/pi/.Xauthority"
+
+# Give the frontend a few seconds to boot up on port 8081
+ExecStartPre=/bin/sleep 15
+ExecStart=/usr/bin/chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:8081
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target
