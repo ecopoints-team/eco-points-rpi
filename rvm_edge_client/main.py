@@ -422,6 +422,14 @@ def run_ecopoints_firmware():
 
         ui_bridge.broadcast("WAKE")
 
+        def wake_server():
+            try:
+                requests.get(f"{BACKEND_URL}/", timeout=5)
+            except Exception:
+                pass
+        threading.Thread(target=wake_server, daemon=True).start()
+        hw.log("NET", "Ping sent to wake backend server...")
+
         # --- STATE: QR SCANNING ---
         hw.display_ui("Showing QR Code...")
         hw.log("CAM", "Camera ON. Searching for QR pattern...")
