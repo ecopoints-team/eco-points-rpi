@@ -68,7 +68,7 @@ class UIBridge:
     def _run_server(self):
         asyncio.set_event_loop(self.loop)
         async def start():
-            return await websockets.serve(self._handler, self.host, self.port)
+            return await websockets.serve(self._handler, self.host, self.port, reuse_address=True, reuse_port=(os.name != 'nt'))
         self.loop.run_until_complete(start())
         self.loop.run_forever()
 
