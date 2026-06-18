@@ -9,10 +9,11 @@ const MOCK_VERIFY_SUCCESS = true;
 
 export async function loginWithQR(
   _token: string
-): Promise<{ success: boolean; userName: string }> {
+): Promise<{ success: boolean; userName: string; role?: string }> {
   await delay(1200);
   if (MOCK_LOGIN_SUCCESS) {
-    return { success: true, userName: 'Jay Dizon' };
+    const isTech = _token.toLowerCase().includes('admin') || _token.toLowerCase().includes('tech');
+    return { success: true, userName: isTech ? 'Admin' : 'Jay Dizon', role: isTech ? 'technician' : 'user' };
   }
   return { success: false, userName: '' };
 }

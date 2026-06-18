@@ -254,6 +254,9 @@ class HardwareInterface:
                 if not ret:
                     continue
                 
+                # Camera is mounted upside down, rotate it 180 degrees
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
+                
                 # Show camera feed for debugging
                 cv2.imshow("RVM Camera Feed - Verifying", frame)
                 cv2.waitKey(1)
@@ -397,7 +400,23 @@ def run_ecopoints_firmware():
                 if auth_resp.status_code in [200, 201]:
                     auth_data = auth_resp.json()
                     wallet_id = auth_data.get("walletId")
-                    account_name = auth_data.get("user", {}).get("name", "Unknown")
+                    user_data = auth_data.get("user", {})
+                    account_name = user_data.get("name", "Unknown")
+                    role = user_data.get("role", "user")
+
+                    if role in ["technician", "superadmin", "head_admin"]:
+                        hw.log("API", f"Admin {account_name} authenticated.")
+                        ui_bridge.broadcast("ADMIN_LOGIN", {"userName": account_name})
+                        
+                        hw.log("SYS", "Waiting for admin actions to complete...")
+                        while True:
+                            if not ui_bridge.clients:
+                                break
+                            msg = ui_bridge.get_message(timeout=0.5)
+                            if msg and msg.get("action") in ["SYSTEM_CLEAR", "CANCEL"]:
+                                break
+                        qr_flow_complete = "TIMEOUT"
+                        break
                     
                     # 2. Start Session
                     session_resp = requests.post(f"{BACKEND_URL}/api/rpi/session/start", headers={"X-API-Key": API_KEY}, json={
@@ -488,6 +507,9 @@ def run_ecopoints_firmware():
                 if cap and cap.isOpened():
                     ret, frame = cap.read()
                     if ret:
+                        # Camera is mounted upside down, rotate it 180 degrees
+                        frame = cv2.rotate(frame, cv2.ROTATE_180)
+                        
                         cv2.imshow("RVM Camera Feed - Waiting for Bottle", frame)
                         cv2.waitKey(1)
                         

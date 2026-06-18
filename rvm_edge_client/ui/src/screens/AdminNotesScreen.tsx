@@ -6,6 +6,7 @@ import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
 import StatusBadge from '../components/StatusBadge';
 import { useKiosk } from '../context/KioskContext';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing, Radius, scale, vscale } from '../constants/theme';
 
 const QUICK_NOTES = [
@@ -60,13 +61,19 @@ export default function AdminNotesScreen() {
       <View style={styles.buttonRow}>
         <GlowButton
           label="Resolved"
-          onPress={() => dispatch({ type: 'ADMIN_COMPLETE' })}
+          onPress={() => {
+            dispatch({ type: 'ADMIN_COMPLETE' });
+            if (!DEV_MODE) sendGPIOEvent({ action: 'SYSTEM_CLEAR' });
+          }}
           style={styles.btn}
         />
         <GlowButton
           label="Needs Review"
           variant="outline"
-          onPress={() => dispatch({ type: 'ADMIN_COMPLETE' })}
+          onPress={() => {
+            dispatch({ type: 'ADMIN_COMPLETE' });
+            if (!DEV_MODE) sendGPIOEvent({ action: 'SYSTEM_CLEAR' });
+          }}
           style={styles.btn}
         />
       </View>

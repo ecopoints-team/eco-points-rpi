@@ -1,0 +1,16 @@
+[Unit]
+Description=EcoPoints React Native Frontend Server
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=__WORKDIR__/ui
+# Use standard npx expo command
+Environment="PATH=/usr/bin:/usr/local/bin:/home/pi/.nvm/versions/node/v20/bin:/usr/local/nvm/versions/node/v20/bin"
+ExecStart=/usr/bin/npx expo start --web --port 8081
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

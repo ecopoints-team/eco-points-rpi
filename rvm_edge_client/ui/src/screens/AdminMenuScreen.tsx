@@ -5,6 +5,7 @@ import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
 import StatusBadge from '../components/StatusBadge';
 import { useKiosk } from '../context/KioskContext';
+import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing, scale } from '../constants/theme';
 
 export default function AdminMenuScreen() {
@@ -42,7 +43,10 @@ export default function AdminMenuScreen() {
       <GlowButton
         label="Exit Admin"
         variant="outline"
-        onPress={() => dispatch({ type: 'SYSTEM_CLEAR' })}
+        onPress={() => {
+          dispatch({ type: 'SYSTEM_CLEAR' });
+          if (!DEV_MODE) sendGPIOEvent({ action: 'SYSTEM_CLEAR' });
+        }}
         style={styles.exitBtn}
       />
     </BackgroundGlow>
