@@ -201,7 +201,7 @@ sudo systemctl start ecopoints-firmware.service
    [Desktop Entry]
    Type=Application
    Name=EcoPoints Kiosk
-   Exec=chromium-browser --kiosk --noerrdialogs --disable-infobars --app=http://localhost:8081
+   Exec=chromium --kiosk --noerrdialogs --disable-infobars --app=http://localhost:8081
    ```
 
 ---

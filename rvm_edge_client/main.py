@@ -31,6 +31,12 @@ try:
 except ImportError:
     CV_AVAILABLE = False
 
+try:
+    from picamera2 import Picamera2
+    PICAMERA2_AVAILABLE = True
+except ImportError:
+    PICAMERA2_AVAILABLE = False
+
 # --- CONFIGURATION (BCM Pin assignments matching README.md) ---
 PIN_BOTTLE_INSERTED = 17  # HIGH pulse when bottle is detected by sensor
 PIN_BIN_FULL        = 27  # HIGH while bin-full sensor is triggered
@@ -124,6 +130,7 @@ class HardwareInterface:
     def __init__(self):
         self.gpio_available = GPIO_AVAILABLE
         self.cv_available = CV_AVAILABLE
+        self.picamera2_available = PICAMERA2_AVAILABLE
         self.model = None
         self._setup_gpio()
         self._setup_cv()
@@ -153,6 +160,11 @@ class HardwareInterface:
             self.log("CV", "OpenCV / YOLO imported, but best.pt model file missing. Running mock CV.")
         else:
             self.log("CV", "OpenCV or Ultralytics libraries missing. Running mock CV.")
+
+        if self.picamera2_available:
+            self.log("CAM", "picamera2 (libcamera) detected. Pi CSI camera will be used.")
+        else:
+            self.log("CAM", "picamera2 not found. Falling back to cv2.VideoCapture(0) (USB webcam).")
             
         self.log("NET", "Connecting to cloud database... SUCCESS")
         self.log("SYS", "System Ready. Standing by.")
@@ -221,6 +233,57 @@ class HardwareInterface:
         time.sleep(duration)
         self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
 
+    def _open_camera(self):
+        """
+        Opens the best available camera source.
+        Returns an object with a .read() method (numpy array) and a .release() method.
+        Uses picamera2 (Pi CSI) when available, otherwise cv2.VideoCapture(0) (USB webcam).
+        """
+        if self.picamera2_available:
+            try:
+                cam = Picamera2()
+                config = cam.create_preview_configuration(
+                    main={"format": "RGB888", "size": (640, 480)}
+                )
+                cam.configure(config)
+                cam.start()
+                time.sleep(0.5)  # Allow sensor to settle
+
+                # Wrap in an adapter so callers use the same .read() / .release() API
+                class _Picamera2Adapter:
+                    def __init__(self, picam):
+                        self._cam = picam
+                        self.opened = True
+
+                    def isOpened(self):
+                        return self.opened
+
+                    def read(self):
+                        try:
+                            import numpy as np
+                            frame = self._cam.capture_array()
+                            # picamera2 RGB888 → cv2 expects BGR
+                            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                            return True, frame
+                        except Exception:
+                            return False, None
+
+                    def release(self):
+                        try:
+                            self._cam.stop()
+                            self._cam.close()
+                        except Exception:
+                            pass
+                        self.opened = False
+
+                return _Picamera2Adapter(cam)
+            except Exception as e:
+                self.log("CAM_ERR", f"picamera2 failed to open: {e}. Falling back to VideoCapture.")
+
+        # Fallback: USB webcam
+        cap = cv2.VideoCapture(0)
+        return cap
+
     def verify_bottle(self):
         """
         Uses the camera and YOLOv8 model to verify and classify the inserted bottle.
@@ -235,14 +298,11 @@ class HardwareInterface:
             return True, sim_brand, sim_size
 
         self.log("CAM", "Starting camera module...")
-        cap = cv2.VideoCapture(0)
+        cap = self._open_camera()
         if not cap.isOpened():
-            self.log("CAM_ERR", "Webcam not detected. Fallback: Simulating scan...")
+            self.log("CAM_ERR", "Camera not detected. Fallback: Simulating scan...")
             time.sleep(1.5)
             return True, "Le Minerale", "600ml"
-
-        # Give the camera sensor time to adjust to light levels
-        time.sleep(0.5)
 
         self.log("CV", "Analyzing image frames with YOLOv11 to confirm bottle...")
         
@@ -479,7 +539,7 @@ def run_ecopoints_firmware():
             consecutive_detections = 0
             if hw.cv_available and hw.model:
                 hw.log("CAM", "Starting camera module for auto-detection...")
-                cap = cv2.VideoCapture(0)
+                cap = hw._open_camera()
             
             while True:
                 if not ui_bridge.clients:
