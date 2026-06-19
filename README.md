@@ -109,6 +109,9 @@ Make sure you have the following installed on your Windows machine:
    - `BACKEND_URL`: URL of the cloud backend (e.g., `http://127.0.0.1:5000`)
    - `MACHINE_ID`: Unique machine ID (e.g., `RVM-PU-01`)
    - `LOCATION`: Location description (e.g., `Institute of Technology`)
+   - `CLI_MODE`: Set to `true` to run without a UI, or `false` for normal UI-driven mode
+   - `API_KEY`: The API key to authenticate requests with the Eco-Points backend
+   - `QR_HMAC_SECRET`: The shared secret used to sign mock user IDs in simulation mode
 
 ---
 

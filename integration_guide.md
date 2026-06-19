@@ -10,75 +10,92 @@ The edge client simulates a Reverse Vending Machine (RVM) and interacts with the
 
 ---
 
-## 1. Start a Session
-Initiated when a user scans their QR code at the machine.
+## 1. Authenticate QR Code
+Initiated when a user scans their QR code at the machine. The backend validates the payload and returns the user's wallet ID and role.
+
+- **Endpoint**: `POST /api/rpi/authenticate`
+- **Headers**: `X-API-Key: <your_api_key_here>`
+- **Request Body**:
+  ```json
+  {
+    "qrPayload": "USER-123",
+    "machineUuid": "RVM-001"
+  }
+  ```
+- **Success Response** (`200 OK` or `201 Created`):
+  ```json
+  {
+    "walletId": 12,
+    "user": {
+      "name": "John Doe",
+      "role": "user"
+    }
+  }
+  ```
+
+---
+
+## 2. Start a Session
+Called immediately after successful authentication to initiate a transaction session for the user.
 
 - **Endpoint**: `POST /api/rpi/session/start`
+- **Headers**: `X-API-Key: <your_api_key_here>`
 - **Request Body**:
   ```json
   {
-    "user_qr": "USER-123",       // The display_id embedded in the QR code
-    "machine_uuid": "RVM-001"    // Unique identifier of the machine
+    "walletId": 12,
+    "machineUuid": "RVM-001"
   }
   ```
-- **Success Response** (`201 Created`):
+- **Success Response** (`200 OK` or `201 Created`):
   ```json
   {
-    "success": true,
-    "account": { "name": "John Doe" },
-    "session": { "session_id": 12, "status": "active" }
+    "session": { "id": 45, "status": "active" }
   }
   ```
 
 ---
 
-## 2. Deposit an Item
+## 3. Deposit an Item
 Triggered each time the machine accepts and verifies a recyclable item.
 
-- **Endpoint**: `POST /api/rpi/item/deposit`
+- **Endpoint**: `POST /api/rpi/session/<session_id>/deposit`
+- **Headers**: `X-API-Key: <your_api_key_here>`
 - **Request Body**:
   ```json
   {
-    "session_id": 12,
-    "item_type": "PET Plastic",
-    "points": 10,
-    "weight_grams": 50,
-    "brand": "Unknown",
-    "condition": "Good",
-    "size_category": "Medium"
+    "machineUuid": "RVM-001",
+    "detectedClass": "Le Minerale",
+    "confidenceScore": 0.95,
+    "pointsAwarded": 10,
+    "status": "Accepted"
   }
   ```
-- **Success Response** (`201 Created`):
+- **Success Response** (`200 OK` or `201 Created`):
   ```json
   {
-    "success": true,
-    "item": { "id": 45, "pointsAwarded": 10, "status": "Accepted" }
+    "success": true
   }
   ```
 
 ---
 
-## 3. End Session (Finalize)
-Called when the user finishes depositing items. Commits the session and credits points to the user's wallet.
+## 4. End Session (Finalize)
+Called when the user finishes depositing items. Commits the session and updates the machine status.
 
-- **Endpoint**: `POST /api/rpi/session/end`
+- **Endpoint**: `POST /api/rpi/session/<session_id>/end`
+- **Headers**: `X-API-Key: <your_api_key_here>`
 - **Request Body**:
   ```json
   {
-    "session_id": 12,
-    "machine_uuid": "RVM-001"
+    "status": "completed",
+    "machineUuid": "RVM-001"
   }
   ```
-- **Success Response** (`200 OK`):
+- **Success Response** (`200 OK` or `201 Created`):
   ```json
   {
-    "success": true,
-    "session": {
-      "id": 12,
-      "status": "completed",
-      "itemCount": 5,
-      "totalPointsEarned": 50
-    }
+    "success": true
   }
   ```
 
@@ -91,6 +108,7 @@ The python daemon (`main.py`) hosts a WebSocket server at `ws://localhost:8765` 
 * **`GO_IDLE`**: Transitions UI to Idle Screen (waiting for user).
 * **`WAKE`**: Transitions UI to QR Scan Screen.
 * **`LOGIN_SUCCESS`**: Transitions UI to Ready Screen. Payload: `{"userName": "name"}`.
+* **`ADMIN_LOGIN`**: Transitions UI to Admin/Maintenance menu. Payload: `{"userName": "name"}`.
 * **`LOGIN_DENIED`**: Transitions UI to Denied Screen (invalid QR).
 * **`SET_DOOR_OPEN`**: Transitions UI to Door Open Screen.
 * **`DOOR_CLOSED`**: Transitions UI back to Verifying Screen.
@@ -116,5 +134,8 @@ In your `rvm_edge_client` directory, ensure your `.env` file matches your backen
 BACKEND_URL=http://127.0.0.1:5000
 MACHINE_ID=RVM-MAIN-001
 LOCATION=Institute of Technology
+CLI_MODE=false
+API_KEY=your_api_key_here
+QR_HMAC_SECRET=your_qr_hmac_secret_here
 ```
 
