@@ -100,6 +100,12 @@ Make sure you have the following installed on your Windows machine:
    ```cmd
    npm install
    ```
+3. Configure UI environment variables:
+   Ensure the `.env` file in the `ui` directory exists. It should contain:
+   ```env
+   EXPO_PUBLIC_DEV_MODE=false
+   ```
+   *(Set to `true` to enable manual simulation buttons and developer navigation tabs.)*
 
 ---
 
