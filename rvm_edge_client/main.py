@@ -492,8 +492,29 @@ def run_ecopoints_firmware():
                             if not ui_bridge.clients:
                                 break
                             msg = ui_bridge.get_message(timeout=0.5)
-                            if msg and msg.get("action") in ["SYSTEM_CLEAR", "CANCEL"]:
-                                break
+                            if msg:
+                                action = msg.get("action")
+                                if action in ["SYSTEM_CLEAR", "CANCEL"]:
+                                    break
+                                elif action == "SUBMIT_LOG":
+                                    payload = msg.get("payload", {})
+                                    log_payload = {
+                                        "machineUuid": MACHINE_ID,
+                                        "actionType": payload.get("actionType"),
+                                        "status": payload.get("status"),
+                                        "notes": payload.get("notes"),
+                                        "performedById": user_data.get("id")
+                                    }
+                                    hw.log("API", f"Submitting machine log: {log_payload}")
+                                    try:
+                                        log_resp = requests.post(f"{BACKEND_URL}/api/rpi/logs/machines", headers={"X-API-Key": API_KEY}, json=log_payload)
+                                        if log_resp.status_code in [200, 201]:
+                                            hw.log("API", "Machine log successfully submitted.")
+                                        else:
+                                            hw.log("API_ERR", f"Failed to submit machine log: Server returned {log_resp.status_code}")
+                                    except Exception as e:
+                                        hw.log("API_ERR", f"Could not sync machine log to backend: {e}")
+
                         qr_flow_complete = "TIMEOUT"
                         break
                     

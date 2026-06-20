@@ -24,6 +24,29 @@ export default function AdminNotesScreen() {
     setNotes((prev: string) => (prev ? `${prev}\n${note}` : note));
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (status: string) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    
+    const actionType = payload.adminAction ?? 'Unknown Action';
+    sendGPIOEvent({
+      action: 'SUBMIT_LOG',
+      payload: {
+        actionType,
+        status,
+        notes,
+      }
+    });
+    
+    // Slight delay to allow WebSocket message to process before clearing
+    setTimeout(() => {
+      dispatch({ type: 'ADMIN_COMPLETE' });
+      if (!DEV_MODE) sendGPIOEvent({ action: 'SYSTEM_CLEAR' });
+    }, 300);
+  };
+
   return (
     <BackgroundGlow style={styles.container}>
       <LogoHeader />
@@ -61,19 +84,15 @@ export default function AdminNotesScreen() {
       <View style={styles.buttonRow}>
         <GlowButton
           label="Resolved"
-          onPress={() => {
-            dispatch({ type: 'ADMIN_COMPLETE' });
-            if (!DEV_MODE) sendGPIOEvent({ action: 'SYSTEM_CLEAR' });
-          }}
+          disabled={isSubmitting}
+          onPress={() => handleSubmit('Resolved')}
           style={styles.btn}
         />
         <GlowButton
           label="Needs Review"
           variant="outline"
-          onPress={() => {
-            dispatch({ type: 'ADMIN_COMPLETE' });
-            if (!DEV_MODE) sendGPIOEvent({ action: 'SYSTEM_CLEAR' });
-          }}
+          disabled={isSubmitting}
+          onPress={() => handleSubmit('Pending')}
           style={styles.btn}
         />
       </View>

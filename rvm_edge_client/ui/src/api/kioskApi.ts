@@ -43,3 +43,28 @@ export async function getSystemStatus(): Promise<{
   await delay(200);
   return { binFull: false, doorOpen: false };
 }
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api/web';
+
+export async function submitMachineLog(payload: {
+  actionType: string;
+  status: string;
+  notes: string;
+}): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_URL}/logs/machines`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...payload,
+        rvmId: process.env.EXPO_PUBLIC_RVM_ID || '9301daec-90be-4573-bb2b-7ff50eb81bc1' // fallback ID if needed
+      }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Failed to submit machine log:', error);
+    return false;
+  }
+}

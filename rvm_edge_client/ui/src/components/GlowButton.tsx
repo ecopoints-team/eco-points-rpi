@@ -13,9 +13,10 @@ interface Props {
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
   variant?: 'primary' | 'outline' | 'danger';
+  disabled?: boolean;
 }
 
-export default function GlowButton({ label, onPress, style, variant = 'primary' }: Props) {
+export default function GlowButton({ label, onPress, style, variant = 'primary', disabled = false }: Props) {
   const scale = useSharedValue(1);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -31,13 +32,14 @@ export default function GlowButton({ label, onPress, style, variant = 'primary' 
 
   if (variant === 'outline') {
     return (
-      <Animated.View style={[animStyle, style]}>
+      <Animated.View style={[animStyle, style, disabled && { opacity: 0.5 }]}>
         <TouchableOpacity
           style={styles.outlineBtn}
           onPress={onPress}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           activeOpacity={0.9}
+          disabled={disabled}
         >
           <Text style={styles.outlineText}>{label}</Text>
         </TouchableOpacity>
@@ -51,12 +53,13 @@ export default function GlowButton({ label, onPress, style, variant = 'primary' 
       : ([Colors.primary, Colors.primaryDark] as const);
 
   return (
-    <Animated.View style={[animStyle, style]}>
+    <Animated.View style={[animStyle, style, disabled && { opacity: 0.5 }]}>
       <TouchableOpacity
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={0.9}
+        disabled={disabled}
       >
         <LinearGradient
           colors={gradientColors}
