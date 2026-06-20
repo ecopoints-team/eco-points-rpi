@@ -14,7 +14,7 @@ Environment="XAUTHORITY=/home/pi/.Xauthority"
 # Give the frontend a few seconds to boot up on port 8081
 ExecStartPre=/bin/sleep 15
 ExecStart=/usr/bin/chromium --noerrdialogs --disable-infobars --kiosk http://localhost:8081
-Restart=always
+Restart=on-failure
 RestartSec=10
 
 [Install]
