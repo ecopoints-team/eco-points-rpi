@@ -74,11 +74,10 @@ export default function QRScanScreen() {
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               autoFocus={true}
+              showSoftInputOnFocus={false}
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder="Manual QR Input..."
-              placeholderTextColor="#9ca3af"
-              style={styles.visibleInput}
+              style={styles.hiddenInput}
             />
             <View style={styles.scanIndicator}>
               {isFocused ? (
@@ -152,22 +151,6 @@ const styles = StyleSheet.create({
     width: 1,
     height: 1,
     opacity: 0,
-  },
-  visibleInput: {
-    position: 'absolute',
-    top: 40,
-    alignSelf: 'center',
-    width: '80%',
-    height: 48,
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontFamily: Fonts.body,
-    fontSize: FontSizes.md,
-    color: '#000000',
-    zIndex: 10,
-    borderWidth: 2,
-    borderColor: Colors.primary,
   },
   scanIndicator: {
     flex: 1,
