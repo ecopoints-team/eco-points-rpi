@@ -28,10 +28,6 @@ The EcoPoints RVM system is designed with a unified, production-ready architectu
 └─────────────────────────────────────┘
 ```
 
-> [!NOTE]
-> **GPIO Bridge (`gpio-bridge/`)**: The separate bridge service is no longer required in active production. GPIO listening has been integrated directly into the `main.py` daemon to avoid WebSocket port conflicts. It is kept in the repository for developer reference only.
-
-
 ---
 
 ## 🔌 Hardware Wiring Guide (Raspberry Pi 5)
@@ -62,32 +58,11 @@ Make sure you have the following installed on your Windows machine:
 
 ---
 
-### Step 1: Set Up the GPIO Bridge
-
-1. Open your Command Prompt (`cmd`) and navigate to the `gpio-bridge` folder:
-   ```cmd
-   cd gpio-bridge
-   ```
-2. Create a Python virtual environment:
-   ```cmd
-   python -m venv venv
-   ```
-3. Activate the virtual environment:
-   ```cmd
-   call venv\Scripts\activate
-   ```
-4. Install Python dependencies:
-   ```cmd
-   pip install -r requirements.txt
-   ```
-
----
-
-### Step 2: Set Up the Edge Client Firmware
+### Step 1: Set Up the Edge Client Firmware
 
 1. Navigate to the `rvm_edge_client` directory:
    ```cmd
-   cd ..\rvm_edge_client
+   cd rvm_edge_client
    ```
 2. Create a Python virtual environment:
    ```cmd
@@ -115,7 +90,7 @@ Make sure you have the following installed on your Windows machine:
 
 ---
 
-### Step 3: Set Up the Kiosk UI
+### Step 2: Set Up the Kiosk UI
 
 1. Navigate to the `ui` directory:
    ```cmd
@@ -212,6 +187,6 @@ sudo systemctl start ecopoints-firmware.service
 ## 🔍 Troubleshooting
 
 - **Address in Use Error (`OSError: [Errno 98]` or `OSError: [WinError 10048]`)**:
-  Both the GPIO Bridge and the UI Bridge default to port `8765`. In development/simulation, do not run both at the same time. Run the UI Bridge via `main.py` when testing the full simulation flow.
+  Ensure no other services are running on port `8765` which is required for the WebSocket Kiosk UI Bridge.
 - **Python Commands Not Recognized**:
   If the `python` command fails, try using `py` or `python3` instead, and verify that Python is added to your Windows Environment Variables Path.
