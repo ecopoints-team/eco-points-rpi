@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TextInput, Keyboard, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Keyboard, TouchableOpacity } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import BackgroundGlow from '../components/BackgroundGlow';
 import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
@@ -15,6 +22,20 @@ export default function QRScanScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const scanned = useRef(false);
   const inputRef = useRef<TextInput>(null);
+
+  const rotation = useSharedValue(0);
+
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false
+    );
+  }, []);
+
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
 
   useEffect(() => {
     const focusInterval = setInterval(() => {
@@ -81,12 +102,18 @@ export default function QRScanScreen() {
             />
             <View style={styles.scanIndicator}>
               {isFocused ? (
-                <Text style={styles.scanIndicatorTextReady}>Scanner Ready</Text>
+                <>
+                  <Text style={styles.scanIndicatorTextReady}>Scanner Ready</Text>
+                  <Text style={styles.scanIndicatorSubtext}>Position code within frame</Text>
+                </>
               ) : (
-                <Text style={styles.scanIndicatorTextInactive}>Scanner Inactive (Tap to Fix)</Text>
+                <>
+                  <Text style={styles.scanIndicatorTextInactive}>Scanner Inactive</Text>
+                  <Text style={styles.scanIndicatorSubtextInactive}>Tap anywhere to reactivate</Text>
+                </>
               )}
               {inputValue.length > 0 && (
-                <View style={{ alignItems: 'center', marginTop: 10 }}>
+                <View style={{ alignItems: 'center', marginTop: 16 }}>
                   <Text style={styles.debugText}>Scanned: {inputValue}</Text>
                   <TouchableOpacity onPress={onSubmitEditing} style={styles.manualSubmitBtn}>
                     <Text style={styles.manualSubmitText}>Submit Scan</Text>
@@ -102,8 +129,9 @@ export default function QRScanScreen() {
           </TouchableOpacity>
         ) : (
           <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color={Colors.primary} />
+            <Animated.View style={[styles.spinner, spinStyle]} />
             <Text style={styles.loadingText}>Verifying QR Code...</Text>
+            <Text style={styles.loadingSubtext}>Please wait</Text>
           </View>
         )}
       </View>
@@ -158,14 +186,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scanIndicatorTextReady: {
-    fontFamily: Fonts.bodyBold,
-    fontSize: FontSizes.md,
-    color: '#10B981',
+    fontFamily: Fonts.heading,
+    fontSize: FontSizes.xl,
+    color: Colors.primary,
+    textAlign: 'center',
   },
   scanIndicatorTextInactive: {
-    fontFamily: Fonts.bodyBold,
-    fontSize: FontSizes.md,
+    fontFamily: Fonts.heading,
+    fontSize: FontSizes.xl,
     color: '#EF4444',
+    textAlign: 'center',
+  },
+  scanIndicatorSubtext: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.md,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+  },
+  scanIndicatorSubtextInactive: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.md,
+    color: 'rgba(239, 68, 68, 0.7)',
+    textAlign: 'center',
   },
   debugText: {
     fontFamily: Fonts.body,
@@ -204,13 +246,28 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     gap: Spacing.sm,
   },
+  spinner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 4,
+    borderColor: Colors.bgTint,
+    borderTopColor: Colors.primary,
+    marginBottom: Spacing.sm,
+  },
   loadingText: {
-    fontFamily: Fonts.bodyBold,
-    fontSize: FontSizes.md,
+    fontFamily: Fonts.heading,
+    fontSize: FontSizes.lg,
     color: Colors.heading,
+    textAlign: 'center',
+  },
+  loadingSubtext: {
+    fontFamily: Fonts.body,
+    fontSize: FontSizes.md,
+    color: Colors.body,
     textAlign: 'center',
   },
 });
