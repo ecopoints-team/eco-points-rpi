@@ -6,7 +6,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
-import { Colors, Fonts, FontSizes, Radius, Spacing } from '../constants/theme';
+import { Colors, Fonts, FontSizes, Radius, Spacing, scale } from '../constants/theme';
 
 interface Props {
   label: string;
@@ -14,9 +14,17 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   variant?: 'primary' | 'outline' | 'danger';
   disabled?: boolean;
+  small?: boolean;
 }
 
-export default function GlowButton({ label, onPress, style, variant = 'primary', disabled = false }: Props) {
+export default function GlowButton({
+  label,
+  onPress,
+  style,
+  variant = 'primary',
+  disabled = false,
+  small = false,
+}: Props) {
   const scale = useSharedValue(1);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -30,18 +38,28 @@ export default function GlowButton({ label, onPress, style, variant = 'primary',
     scale.value = withSpring(1);
   };
 
+  const innerStyle = [
+    variant === 'outline' ? styles.outlineBtn : styles.btn,
+    small && styles.smallBtn,
+  ];
+
+  const labelStyle = [
+    variant === 'outline' ? styles.outlineText : styles.label,
+    small && styles.smallLabel,
+  ];
+
   if (variant === 'outline') {
     return (
       <Animated.View style={[animStyle, style, disabled && { opacity: 0.5 }]}>
         <TouchableOpacity
-          style={styles.outlineBtn}
+          style={innerStyle}
           onPress={onPress}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           activeOpacity={0.9}
           disabled={disabled}
         >
-          <Text style={styles.outlineText}>{label}</Text>
+          <Text style={labelStyle}>{label}</Text>
         </TouchableOpacity>
       </Animated.View>
     );
@@ -65,9 +83,9 @@ export default function GlowButton({ label, onPress, style, variant = 'primary',
           colors={gradientColors}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.btn}
+          style={innerStyle}
         >
-          <Text style={styles.label}>{label}</Text>
+          <Text style={labelStyle}>{label}</Text>
         </LinearGradient>
       </TouchableOpacity>
     </Animated.View>
@@ -103,5 +121,13 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bodyBold,
     fontSize: FontSizes.md,
     color: Colors.primary,
+  },
+  smallBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: Spacing.md,
+    minWidth: 150,
+  },
+  smallLabel: {
+    fontSize: scale(20),
   },
 });

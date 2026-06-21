@@ -31,7 +31,7 @@ export default function AdminNotesScreen() {
   const handleConfirm = async () => {
     if (isSubmitting || selectedNotes.length === 0) return;
     setIsSubmitting(true);
-    
+
     const actionType = payload.adminAction ?? 'Unknown Action';
     const notesString = selectedNotes.join(', ');
     const status = selectedNotes.includes('Needs Further Review') ? 'Pending' : 'Resolved';
@@ -44,7 +44,7 @@ export default function AdminNotesScreen() {
         notes: notesString,
       }
     });
-    
+
     // Slight delay to allow WebSocket message to process before clearing
     setTimeout(() => {
       dispatch({ type: 'ADMIN_COMPLETE' });
@@ -69,6 +69,7 @@ export default function AdminNotesScreen() {
               label={note}
               variant={isSelected ? 'primary' : 'outline'}
               onPress={() => handleToggle(note)}
+              small={true}
               style={styles.optionBtn}
             />
           );
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
     maxWidth: scale(500),
   },
   optionBtn: {
-    minWidth: scale(220),
+    minWidth: scale(150),
     flexGrow: 0,
   },
   buttonRow: {
