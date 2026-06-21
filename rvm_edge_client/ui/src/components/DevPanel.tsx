@@ -12,19 +12,18 @@ import { Colors, Fonts, FontSizes } from '../constants/theme';
 
 const SCREENS: { label: string; screen: KioskState }[] = [
   { label: '1 Start',       screen: 'START' },
-  { label: '2 Idle',        screen: 'IDLE' },
-  { label: '3 QR Scan',     screen: 'QR_SCAN' },
-  { label: '4 Ready',       screen: 'READY' },
-  { label: '5 Verifying',   screen: 'VERIFYING' },
-  { label: '6 Accepted',    screen: 'ACCEPTED' },
-  { label: '7 Rejected',    screen: 'REJECTED' },
-  { label: '8 Thank You',   screen: 'THANK_YOU' },
-  { label: '9 Door Open',   screen: 'DOOR_OPEN' },
-  { label: '10 Denied',     screen: 'DENIED' },
-  { label: '11 Admin Menu', screen: 'ADMIN_MENU' },
-  { label: '12 Admin Act',  screen: 'ADMIN_ACTION' },
-  { label: '13 Admin Note', screen: 'ADMIN_NOTES' },
-  { label: '14 Bin Denied', screen: 'BIN_FULL_DENIED' },
+  { label: '2 QR Scan',     screen: 'QR_SCAN' },
+  { label: '3 Ready',       screen: 'READY' },
+  { label: '4 Verifying',   screen: 'VERIFYING' },
+  { label: '5 Accepted',    screen: 'ACCEPTED' },
+  { label: '6 Rejected',    screen: 'REJECTED' },
+  { label: '7 Thank You',   screen: 'THANK_YOU' },
+  { label: '8 Door Open',   screen: 'DOOR_OPEN' },
+  { label: '9 Denied',     screen: 'DENIED' },
+  { label: '10 Admin Menu', screen: 'ADMIN_MENU' },
+  { label: '11 Admin Act',  screen: 'ADMIN_ACTION' },
+  { label: '12 Admin Note', screen: 'ADMIN_NOTES' },
+  { label: '13 Bin Denied', screen: 'BIN_FULL_DENIED' },
 ];
 
 // Fake payload so result screens render correctly

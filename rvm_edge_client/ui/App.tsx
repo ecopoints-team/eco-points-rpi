@@ -18,7 +18,6 @@ import { useKioskTimer } from './src/hooks/useKioskTimer';
 import { DEV_MODE, useGPIOBridge } from './src/hooks/useGPIOBridge';
 
 import StartScreen from './src/screens/StartScreen';
-import IdleScreen from './src/screens/IdleScreen';
 import QRScanScreen from './src/screens/QRScanScreen';
 import ReadyScreen from './src/screens/ReadyScreen';
 import VerifyingScreen from './src/screens/VerifyingScreen';
@@ -41,8 +40,8 @@ function KioskRouter() {
 
   let ActiveScreen: React.ReactElement;
   switch (screen) {
-    case 'START':           ActiveScreen = <StartScreen />; break;
-    case 'IDLE':            ActiveScreen = <IdleScreen />; break;
+    case 'START':
+    case 'IDLE':            ActiveScreen = <StartScreen />; break;
     case 'QR_SCAN':         ActiveScreen = <QRScanScreen />; break;
     case 'READY':           ActiveScreen = <ReadyScreen />; break;
     case 'VERIFYING':       ActiveScreen = <VerifyingScreen />; break;

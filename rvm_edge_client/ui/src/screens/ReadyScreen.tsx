@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import BackgroundGlow from '../components/BackgroundGlow';
 import LogoHeader from '../components/LogoHeader';
 import GlowButton from '../components/GlowButton';
 import RecyclingIcon from '../components/RecyclingIcon';
 import { useKiosk } from '../context/KioskContext';
 import { DEV_MODE, sendGPIOEvent } from '../hooks/useGPIOBridge';
-import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
+import { Colors, Fonts, scale, vscale } from '../constants/theme';
 
 export default function ReadyScreen() {
   const { payload, dispatch } = useKiosk();
@@ -21,7 +21,7 @@ export default function ReadyScreen() {
         </Text>
       </View>
 
-      <RecyclingIcon size={120} color={Colors.primary} animated={true} />
+      <RecyclingIcon size={100} color={Colors.primary} animated={true} />
 
       <View style={styles.textWrapper}>
         <Text style={styles.instruction}>
@@ -43,7 +43,7 @@ export default function ReadyScreen() {
               sendGPIOEvent({ action: 'BOTTLE_INSERTED' });
             }
           }}
-          style={[styles.btn, { minWidth: 400, paddingVertical: 20 }]}
+          style={[styles.btn, { minWidth: scale(400) }]}
         />
         
         <GlowButton
@@ -55,7 +55,7 @@ export default function ReadyScreen() {
               sendGPIOEvent({ action: 'CANCEL' });
             }
           }}
-          style={styles.btn}
+          style={[styles.btn, { minWidth: scale(150) }]}
         />
       </View>
     </BackgroundGlow>
@@ -63,37 +63,42 @@ export default function ReadyScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
+  container: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: vscale(12),
+    paddingTop: vscale(40),
+    paddingBottom: vscale(20),
+  },
   textWrapper: {
     alignItems: 'center',
-    gap: Spacing.xs,
+    gap: vscale(4),
   },
   welcome: {
     fontFamily: Fonts.headingBold,
-    fontSize: FontSizes.xxl,
+    fontSize: scale(38),
     color: Colors.heading,
     textAlign: 'center',
   },
   instruction: {
     fontFamily: Fonts.bodyBold,
-    fontSize: FontSizes.xl,
+    fontSize: scale(28),
     color: Colors.heading,
     textAlign: 'center',
-    marginTop: Spacing.sm,
   },
   hint: {
     fontFamily: Fonts.body,
-    fontSize: FontSizes.lg,
+    fontSize: scale(20),
     color: Colors.body,
     textAlign: 'center',
   },
   actionsContainer: {
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
+    gap: vscale(10),
+    marginTop: vscale(10),
   },
-  btn: { 
-    minWidth: 200,
+  btn: {
+    minWidth: scale(200),
   },
 });
 
