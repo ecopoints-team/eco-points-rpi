@@ -172,6 +172,10 @@ class HardwareInterface:
             self.log("CAM", "picamera2 not found. Falling back to cv2.VideoCapture(0) (USB webcam).")
             
         self.log("NET", "Connecting to cloud database... SUCCESS")
+        
+        # Ensure QR scanner is OFF during idle
+        self.set_scanner_power(False)
+
         self.log("SYS", "System Ready. Standing by.")
         print("-" * 50)
 
@@ -269,6 +273,19 @@ class HardwareInterface:
         print(f"\n[LCD DISPLAY] >> \"{text}\"\n")
         if event:
             ui_bridge.broadcast(event, data)
+
+    def set_scanner_power(self, enable: bool):
+        """Uses uhubctl to toggle USB port power for the QR Scanner."""
+        if not self.gpio_available: # Only do this on the real Pi
+            return
+        state = "1" if enable else "0"
+        action = "Activating" if enable else "Deactivating"
+        self.log("USB", f"{action} QR Scanner Power (via uhubctl)...")
+        try:
+            # -a toggles all compatible ports
+            os.system(f"sudo uhubctl -a {state} >/dev/null 2>&1")
+        except Exception:
+            pass
 
     def spin_motor(self, duration=1.2):
         self.log("MOTOR", "Activating sorting actuator/conveyor...")
@@ -482,6 +499,9 @@ def run_ecopoints_firmware():
         hw.log("NET", "Ping sent to wake backend server...")
 
         # --- STATE: QR SCANNING ---
+        hw.set_scanner_power(True)
+        time.sleep(1.5)  # Give USB scanner time to boot
+        
         hw.display_ui("Showing QR Code...")
         hw.log("CAM", "Camera ON. Searching for QR pattern...")
 
@@ -588,6 +608,7 @@ def run_ecopoints_firmware():
                 ui_bridge.broadcast("LOGIN_DENIED")
                 qr_flow_complete = "TIMEOUT"
                 break
+        hw.set_scanner_power(False)
 
         if qr_flow_complete == "TIMEOUT":
             continue
