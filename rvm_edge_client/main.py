@@ -320,12 +320,18 @@ class HardwareInterface:
                 locations = [loc.strip() for loc in UHUBCTL_LOCATIONS.split(",") if loc.strip()]
                 for loc in locations:
                     port_arg = f"-p {UHUBCTL_PORT} " if UHUBCTL_PORT else ""
-                    os.system(f"sudo uhubctl -l {loc} {port_arg}-a {state} >/dev/null 2>&1")
+                    cmd = f"sudo uhubctl -l {loc} {port_arg}-a {state}"
+                    ret = os.system(f"{cmd} >/dev/null 2>&1")
+                    if ret != 0:
+                        self.log("USB_WARN", f"Command '{cmd}' failed with exit code {ret}.")
             else:
                 # Fallback to default behavior
-                os.system(f"sudo uhubctl -a {state} >/dev/null 2>&1")
-        except Exception:
-            pass
+                cmd = f"sudo uhubctl -a {state}"
+                ret = os.system(f"{cmd} >/dev/null 2>&1")
+                if ret != 0:
+                    self.log("USB_WARN", f"Command '{cmd}' failed with exit code {ret}.")
+        except Exception as e:
+            self.log("USB_ERR", f"Failed to run uhubctl: {e}")
 
     def spin_motor(self, duration=1.2):
         self.log("MOTOR", "Activating sorting actuator/conveyor...")

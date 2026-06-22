@@ -22,8 +22,8 @@ def main():
         cam.configure(config)
         cam.start()
         use_picam2 = True
-    except ImportError:
-        print("picamera2 not found. Falling back to cv2.VideoCapture(0)...")
+    except (ImportError, Exception) as e:
+        print(f"picamera2 initialization failed ({e}). Falling back to cv2.VideoCapture(0)...")
         cam = cv2.VideoCapture(0)
         use_picam2 = False
 
