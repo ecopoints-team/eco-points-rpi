@@ -41,8 +41,9 @@ except ImportError:
 
 # --- CONFIGURATION (BCM Pin assignments matching README.md) ---
 PIN_BOTTLE_INSERTED = 17  # HIGH pulse when bottle is detected by sensor
-PIN_BIN_FULL        = 27  # HIGH while bin-full sensor is triggered
-PIN_DOOR_OPEN       = 22  # HIGH while door-open sensor is triggered
+PIN_BIN_FULL        = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
+PIN_DOOR_OPEN       = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
+PIN_STROBE_LIGHT    = 22  # Strobe Light (Red) indicator (BCM 22 / Pin 15)
 
 # Global flag to track physical bottle insertion events from GPIO interrupt
 physical_bottle_inserted = False
@@ -134,8 +135,10 @@ class HardwareInterface:
         self.cv_available = CV_AVAILABLE
         self.picamera2_available = PICAMERA2_AVAILABLE
         self.model = None
+        self._bin_full_confirmed = False
         self._setup_gpio()
         self._setup_cv()
+        self._start_bin_monitor()
 
     def log(self, system, message):
         """Prints formatted logs like a real system terminal."""
@@ -181,6 +184,8 @@ class HardwareInterface:
             GPIO.setup(PIN_BOTTLE_INSERTED, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             GPIO.setup(PIN_BIN_FULL,        GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             GPIO.setup(PIN_DOOR_OPEN,       GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            GPIO.setup(PIN_STROBE_LIGHT,    GPIO.OUT)
+            GPIO.output(PIN_STROBE_LIGHT,   GPIO.LOW)
             
             # Setup hardware interrupt callback for the bottle insertion pulse
             GPIO.add_event_detect(
@@ -208,13 +213,48 @@ class HardwareInterface:
             print(f"[CV_ERR] Failed to load YOLOv11 model: {e}")
             self.model = None
 
+    def _start_bin_monitor(self):
+        if self.gpio_available:
+            t = threading.Thread(target=self._monitor_bin_full, daemon=True)
+            t.start()
+
+    def _monitor_bin_full(self):
+        # Continuous background scan of the curtain/bin-full sensor
+        consecutive_highs = 0
+        consecutive_lows = 0
+        required_high_time = 2.0  # seconds of continuous block to declare full
+        required_low_time = 1.0   # seconds of continuous clear to declare normal
+        poll_interval = 0.1       # scan every 100ms
+        
+        high_threshold = int(required_high_time / poll_interval) # 20
+        low_threshold = int(required_low_time / poll_interval)   # 10
+        
+        while True:
+            try:
+                if GPIO.input(PIN_BIN_FULL) == GPIO.HIGH:
+                    consecutive_highs += 1
+                    consecutive_lows = 0
+                    if consecutive_highs >= high_threshold:
+                        if not self._bin_full_confirmed:
+                            self.log("GPIO", "Curtain sensor continuously blocked. Bin marked FULL.")
+                            self._bin_full_confirmed = True
+                            GPIO.output(PIN_STROBE_LIGHT, GPIO.HIGH)
+                else:
+                    consecutive_lows += 1
+                    consecutive_highs = 0
+                    if consecutive_lows >= low_threshold:
+                        if self._bin_full_confirmed:
+                            self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
+                            self._bin_full_confirmed = False
+                            GPIO.output(PIN_STROBE_LIGHT, GPIO.LOW)
+            except Exception as e:
+                pass
+            time.sleep(poll_interval)
+
     def is_bin_full(self) -> bool:
         if not self.gpio_available:
             return False
-        try:
-            return GPIO.input(PIN_BIN_FULL) == GPIO.HIGH
-        except Exception:
-            return False
+        return self._bin_full_confirmed
 
     def is_door_open(self) -> bool:
         if not self.gpio_available:
