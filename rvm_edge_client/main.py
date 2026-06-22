@@ -245,17 +245,19 @@ class HardwareInterface:
         # Continuous background scan of the curtain/bin-full sensor
         consecutive_blocks = 0
         consecutive_clears = 0
-        required_high_time = 2.0  # seconds of continuous block to declare full
-        required_low_time = 1.0   # seconds of continuous clear to declare normal
+        required_high_time = 1.0  # seconds of continuous block to declare full
+        required_low_time = 0.5   # seconds of continuous clear to declare normal
         poll_interval = 0.1       # scan every 100ms
         
-        high_threshold = int(required_high_time / poll_interval) # 20
-        low_threshold = int(required_low_time / poll_interval)   # 10
+        high_threshold = int(required_high_time / poll_interval) # 10
+        low_threshold = int(required_low_time / poll_interval)   # 5
         
         while True:
             try:
-                # Active-LOW: LOW (0) means blocked, HIGH (1) means clear
-                if GPIO.input(PIN_BIN_FULL) == GPIO.LOW:
+                # NC NPN Sensor under Pull-Up: 
+                # HIGH (1) = blocked (sensor floats, pull-up drives it HIGH)
+                # LOW (0)  = clear (sensor conducts to GND)
+                if GPIO.input(PIN_BIN_FULL) == GPIO.HIGH:
                     consecutive_blocks += 1
                     consecutive_clears = 0
                     if consecutive_blocks >= high_threshold:
