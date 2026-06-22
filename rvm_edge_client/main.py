@@ -263,12 +263,8 @@ class HardwareInterface:
                             self.log("GPIO", "Curtain sensor continuously blocked. Bin marked FULL.")
                             self._bin_full_confirmed = True
                         
-                        # Blink the Red LED while bin is full (toggle every ~500ms)
-                        # Active-LOW: LOW = ON, HIGH = OFF
-                        if int(time.time() * 2) % 2 == 0:
-                            GPIO.output(PIN_FAULT_LED, GPIO.LOW)   # ON
-                        else:
-                            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)  # OFF
+                        # Stable Red LED: LOW = ON (active-LOW)
+                        GPIO.output(PIN_FAULT_LED, GPIO.LOW)
                 else:
                     consecutive_clears += 1
                     consecutive_blocks = 0
@@ -276,7 +272,9 @@ class HardwareInterface:
                         if self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
                             self._bin_full_confirmed = False
-                            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)  # Active-LOW: HIGH = OFF
+                        
+                        # Turn OFF Red LED: HIGH = OFF (active-LOW)
+                        GPIO.output(PIN_FAULT_LED, GPIO.HIGH)
             except Exception as e:
                 pass
             time.sleep(poll_interval)
