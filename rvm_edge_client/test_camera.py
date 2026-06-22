@@ -41,7 +41,7 @@ def main():
             break
             
         # Rotate 180 since camera is typically upside down on the RVM
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+        # frame = cv2.rotate(frame, cv2.ROTATE_180)
         
         # Run inference! conf=0.5 means only show boxes if 50% sure.
         results = model.predict(frame, conf=0.5, verbose=False)

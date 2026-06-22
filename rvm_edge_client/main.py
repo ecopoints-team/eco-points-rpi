@@ -45,8 +45,9 @@ PIN_BIN_FULL        = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin
 PIN_DOOR_OPEN       = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
 
 # Light Indicators
-PIN_FAULT_LED       = 27  # Red LED (BCM 27)
-PIN_READY_LED       = 24  # Green LED (BCM 24)
+PIN_FAULT_LED       = 27  # Red LED (BCM 27) — active-LOW (LOW=ON, HIGH=OFF)
+# Note: The green LED is a hardwired power indicator (always ON when Pi has power).
+#       It is NOT connected to any GPIO pin and cannot be software-controlled.
 # PIN_STROBE_LED      = 22  # Strobe LED (BCM 22) - Not implemented yet
 
 # Global flag to track physical bottle insertion events from GPIO interrupt
@@ -192,10 +193,10 @@ class HardwareInterface:
             GPIO.setup(PIN_BOTTLE_INSERTED, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             GPIO.setup(PIN_BIN_FULL,        GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             GPIO.setup(PIN_DOOR_OPEN,       GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-            GPIO.setup(PIN_FAULT_LED,       GPIO.OUT)
-            GPIO.output(PIN_FAULT_LED,      GPIO.LOW)
-            GPIO.setup(PIN_READY_LED,       GPIO.OUT)
-            GPIO.output(PIN_READY_LED,      GPIO.LOW)
+
+            # Red Fault LED is wired ACTIVE-LOW (cathode → GPIO 27, anode → 3.3V).
+            # HIGH = LED OFF, LOW = LED ON. Initial state: HIGH (OFF).
+            GPIO.setup(PIN_FAULT_LED,  GPIO.OUT, initial=GPIO.HIGH)
             
             # Setup hardware interrupt callback for the bottle insertion pulse
             GPIO.add_event_detect(
@@ -207,6 +208,18 @@ class HardwareInterface:
         except Exception as e:
             print(f"[GPIO_ERR] Failed to configure GPIO pins: {e}")
             self.gpio_available = False
+
+    def shutdown_gpio(self):
+        """Force Fault LED OFF then release all GPIO resources."""
+        if not self.gpio_available:
+            return
+        try:
+            # Drive pin HIGH first so active-LOW LED turns OFF before cleanup
+            # reverts it to floating INPUT mode.
+            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)
+        except Exception:
+            pass
+        GPIO.cleanup()
 
     def _setup_cv(self):
         if not self.cv_available:
@@ -250,10 +263,11 @@ class HardwareInterface:
                             self._bin_full_confirmed = True
                         
                         # Blink the Red LED while bin is full (toggle every ~500ms)
+                        # Active-LOW: LOW = ON, HIGH = OFF
                         if int(time.time() * 2) % 2 == 0:
-                            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)
+                            GPIO.output(PIN_FAULT_LED, GPIO.LOW)   # ON
                         else:
-                            GPIO.output(PIN_FAULT_LED, GPIO.LOW)
+                            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)  # OFF
                 else:
                     consecutive_lows += 1
                     consecutive_highs = 0
@@ -261,7 +275,7 @@ class HardwareInterface:
                         if self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
                             self._bin_full_confirmed = False
-                            GPIO.output(PIN_FAULT_LED, GPIO.LOW)
+                            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)  # Active-LOW: HIGH = OFF
             except Exception as e:
                 pass
             time.sleep(poll_interval)
@@ -285,14 +299,8 @@ class HardwareInterface:
         if event:
             ui_bridge.broadcast(event, data)
 
-    def set_ready_led(self, state: bool):
-        """Turns the Green Ready LED ON or OFF."""
-        if not self.gpio_available:
-            return
-        try:
-            GPIO.output(PIN_READY_LED, GPIO.HIGH if state else GPIO.LOW)
-        except Exception:
-            pass
+    # Note: set_ready_led() removed — the green LED is a hardwired power indicator
+    # (always ON when the Pi has power) and is not connected to any GPIO pin.
 
     def set_scanner_power(self, enable: bool):
         """Uses uhubctl to toggle USB port power for the QR Scanner."""
@@ -394,7 +402,7 @@ class HardwareInterface:
                     continue
                 
                 # Camera is mounted upside down, rotate it 180 degrees
-                frame = cv2.rotate(frame, cv2.ROTATE_180)
+                # frame = cv2.rotate(frame, cv2.ROTATE_180)
                 
                 # Show camera feed for debugging only if running in CLI mode
                 if SHOW_CV_WINDOW:
@@ -453,11 +461,11 @@ class HardwareInterface:
 
 
 # --- MAIN FIRMWARE PROCESS ---
-def run_ecopoints_firmware():
+def run_ecopoints_firmware(hw: "HardwareInterface"):
     global physical_bottle_inserted
     
-    hw = HardwareInterface()
     hw.boot_sequence()
+
 
     user_total_points = 0
 
@@ -638,7 +646,6 @@ def run_ecopoints_firmware():
         physical_bottle_inserted = False  # Reset flag for transaction start
 
         while transacting:
-            hw.set_ready_led(True)
             hw.display_ui("Please insert bottles in place", "READY")
             
             # Verify safety door is closed before opening actuator
@@ -733,8 +740,6 @@ def run_ecopoints_firmware():
                 cap.release()
                 cv2.destroyAllWindows()
                 time.sleep(0.5)  # Give OS time to free the camera resource
-            
-            hw.set_ready_led(False)
             
             if not user_inserted:
                 hw.log("SYS", "Transaction finished or canceled by user.")
@@ -884,14 +889,20 @@ def run_ecopoints_firmware():
 
 
 if __name__ == "__main__":
+    _hw = None
     try:
-        run_ecopoints_firmware()
+        _hw = HardwareInterface()
+        run_ecopoints_firmware(_hw)
     except KeyboardInterrupt:
         print("\n[SYSTEM] Shutdown initiated by user.")
     finally:
-        if GPIO_AVAILABLE:
+        if _hw is not None:
+            # shutdown_gpio() drives LED pins HIGH (OFF) BEFORE releasing them
+            # to INPUT/floating mode, preventing active-LOW LEDs from staying lit.
+            _hw.shutdown_gpio()
+            print("[GPIO] Pins returned to safe state.")
+        elif GPIO_AVAILABLE:
             try:
                 GPIO.cleanup()
-                print("[GPIO] Pins returned to safe state.")
             except Exception as e:
                 print(f"[GPIO_ERR] Cleanup failed: {e}")
