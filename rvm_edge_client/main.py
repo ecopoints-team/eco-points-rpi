@@ -43,7 +43,11 @@ except ImportError:
 PIN_BOTTLE_INSERTED = 17  # HIGH pulse when bottle is detected by sensor
 PIN_BIN_FULL        = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
 PIN_DOOR_OPEN       = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
-PIN_STROBE_LIGHT    = 22  # Strobe Light (Red) indicator (BCM 22 / Pin 15)
+
+# Light Indicators
+PIN_FAULT_LED       = 27  # Red LED (BCM 27)
+PIN_READY_LED       = 24  # Green LED (BCM 24)
+# PIN_STROBE_LED      = 22  # Strobe LED (BCM 22) - Not implemented yet
 
 # Global flag to track physical bottle insertion events from GPIO interrupt
 physical_bottle_inserted = False
@@ -188,8 +192,10 @@ class HardwareInterface:
             GPIO.setup(PIN_BOTTLE_INSERTED, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             GPIO.setup(PIN_BIN_FULL,        GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             GPIO.setup(PIN_DOOR_OPEN,       GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-            GPIO.setup(PIN_STROBE_LIGHT,    GPIO.OUT)
-            GPIO.output(PIN_STROBE_LIGHT,   GPIO.LOW)
+            GPIO.setup(PIN_FAULT_LED,       GPIO.OUT)
+            GPIO.output(PIN_FAULT_LED,      GPIO.LOW)
+            GPIO.setup(PIN_READY_LED,       GPIO.OUT)
+            GPIO.output(PIN_READY_LED,      GPIO.LOW)
             
             # Setup hardware interrupt callback for the bottle insertion pulse
             GPIO.add_event_detect(
@@ -242,7 +248,12 @@ class HardwareInterface:
                         if not self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor continuously blocked. Bin marked FULL.")
                             self._bin_full_confirmed = True
-                            GPIO.output(PIN_STROBE_LIGHT, GPIO.HIGH)
+                        
+                        # Blink the Red LED while bin is full (toggle every ~500ms)
+                        if int(time.time() * 2) % 2 == 0:
+                            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)
+                        else:
+                            GPIO.output(PIN_FAULT_LED, GPIO.LOW)
                 else:
                     consecutive_lows += 1
                     consecutive_highs = 0
@@ -250,7 +261,7 @@ class HardwareInterface:
                         if self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
                             self._bin_full_confirmed = False
-                            GPIO.output(PIN_STROBE_LIGHT, GPIO.LOW)
+                            GPIO.output(PIN_FAULT_LED, GPIO.LOW)
             except Exception as e:
                 pass
             time.sleep(poll_interval)
@@ -273,6 +284,15 @@ class HardwareInterface:
         print(f"\n[LCD DISPLAY] >> \"{text}\"\n")
         if event:
             ui_bridge.broadcast(event, data)
+
+    def set_ready_led(self, state: bool):
+        """Turns the Green Ready LED ON or OFF."""
+        if not self.gpio_available:
+            return
+        try:
+            GPIO.output(PIN_READY_LED, GPIO.HIGH if state else GPIO.LOW)
+        except Exception:
+            pass
 
     def set_scanner_power(self, enable: bool):
         """Uses uhubctl to toggle USB port power for the QR Scanner."""
@@ -618,6 +638,7 @@ def run_ecopoints_firmware():
         physical_bottle_inserted = False  # Reset flag for transaction start
 
         while transacting:
+            hw.set_ready_led(True)
             hw.display_ui("Please insert bottles in place", "READY")
             
             # Verify safety door is closed before opening actuator
@@ -712,6 +733,8 @@ def run_ecopoints_firmware():
                 cap.release()
                 cv2.destroyAllWindows()
                 time.sleep(0.5)  # Give OS time to free the camera resource
+            
+            hw.set_ready_led(False)
             
             if not user_inserted:
                 hw.log("SYS", "Transaction finished or canceled by user.")

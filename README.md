@@ -39,7 +39,7 @@ Connect your sensors to the Raspberry Pi 5 GPIO pins using the **BCM numbering s
 | **Bottle Inserted** | `GPIO 17` | Pin 11 | `LOW` | Sends a short `HIGH` pulse when a bottle passes through the chute. |
 | **Bin Full** | `GPIO 5` | Pin 29 | `LOW` | Reads `HIGH` when the storage limit sensor is blocked. |
 | **Door Open** | `GPIO 11` | Pin 23 | `LOW` | Reads `HIGH` when the magnetic safety door is opened. |
-| **Strobe Light** | `GPIO 22` | Pin 15 | `LOW` | Turns `HIGH` (Red) when a system fault (e.g., Bin Full) is detected. |
+| **Red Fault LED** | `GPIO 27` | Pin 13 | `LOW` | Turns `HIGH` when a system fault (e.g., Bin Full) is detected. |
 | **Ground** | `GND` | Pin 9, 14, 20... | — | Common ground reference for all hardware components. |
 
 > [!IMPORTANT]
