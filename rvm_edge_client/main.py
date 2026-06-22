@@ -245,11 +245,11 @@ class HardwareInterface:
         # Continuous background scan of the curtain/bin-full sensor
         consecutive_blocks = 0
         consecutive_clears = 0
-        required_high_time = 1.0  # seconds of continuous block to declare full
+        required_high_time = 5.0  # seconds of continuous block to declare full
         required_low_time = 0.5   # seconds of continuous clear to declare normal
         poll_interval = 0.1       # scan every 100ms
         
-        high_threshold = int(required_high_time / poll_interval) # 10
+        high_threshold = int(required_high_time / poll_interval) # 50
         low_threshold = int(required_low_time / poll_interval)   # 5
         
         while True:
