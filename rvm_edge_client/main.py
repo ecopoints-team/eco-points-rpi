@@ -17,6 +17,8 @@ MACHINE_ID = os.getenv("MACHINE_ID", "RVM-PU-01")
 LOCATION = os.getenv("LOCATION", "Institute of Technology")
 API_KEY = os.getenv("API_KEY", "")
 SHOW_CV_WINDOW = os.getenv("CLI_MODE", "false").lower() == "true"
+UHUBCTL_LOCATIONS = os.getenv("UHUBCTL_LOCATIONS", "")
+UHUBCTL_PORT = os.getenv("UHUBCTL_PORT", "")
 
 # --- HARDWARE LIBRARIES (CONDITIONAL IMPORT FOR PORTABILITY) ---
 try:
@@ -313,8 +315,15 @@ class HardwareInterface:
         action = "Activating" if enable else "Deactivating"
         self.log("USB", f"{action} QR Scanner Power (via uhubctl)...")
         try:
-            # -a toggles all compatible ports
-            os.system(f"sudo uhubctl -a {state} >/dev/null 2>&1")
+            if UHUBCTL_LOCATIONS:
+                # Support multiple comma-separated hub locations (e.g. 3,4 on Pi 5)
+                locations = [loc.strip() for loc in UHUBCTL_LOCATIONS.split(",") if loc.strip()]
+                for loc in locations:
+                    port_arg = f"-p {UHUBCTL_PORT} " if UHUBCTL_PORT else ""
+                    os.system(f"sudo uhubctl -l {loc} {port_arg}-a {state} >/dev/null 2>&1")
+            else:
+                # Fallback to default behavior
+                os.system(f"sudo uhubctl -a {state} >/dev/null 2>&1")
         except Exception:
             pass
 
