@@ -77,6 +77,9 @@ function reducer(state: KioskStateShape, action: KioskAction): KioskStateShape {
       return { screen: 'IDLE', payload: { isBinFull: state.payload.isBinFull, sessionTransactions: undefined, totalPoints: undefined, totalBottles: undefined } };
 
     case 'WAKE':
+      if (state.payload.isBinFull) {
+        return { screen: 'BIN_FULL_DENIED', payload: state.payload };
+      }
       return { screen: 'QR_SCAN', payload: { isBinFull: state.payload.isBinFull } };
 
     case 'LOGIN_SUCCESS':
@@ -141,13 +144,13 @@ function reducer(state: KioskStateShape, action: KioskAction): KioskStateShape {
 
     case 'SET_BIN_FULL':
       return {
-        screen: state.screen,
+        screen: 'BIN_FULL_DENIED',
         payload: { ...state.payload, isBinFull: true },
       };
 
     case 'CLEAR_BIN_FULL':
       return {
-        screen: state.screen,
+        screen: state.screen === 'BIN_FULL_DENIED' ? 'START' : state.screen,
         payload: { ...state.payload, isBinFull: false },
       };
 

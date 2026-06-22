@@ -264,6 +264,7 @@ class HardwareInterface:
                         if not self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor continuously blocked. Bin marked FULL.")
                             self._bin_full_confirmed = True
+                            self.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
                         
                         # Stable Red LED: LOW = ON (active-LOW)
                         GPIO.output(PIN_FAULT_LED, GPIO.LOW)
@@ -274,6 +275,7 @@ class HardwareInterface:
                         if self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
                             self._bin_full_confirmed = False
+                            self.display_ui("Bin cleared. Machine ready.", "CLEAR_BIN_FULL")
                         
                         # Turn OFF Red LED: HIGH = OFF (active-LOW)
                         GPIO.output(PIN_FAULT_LED, GPIO.HIGH)

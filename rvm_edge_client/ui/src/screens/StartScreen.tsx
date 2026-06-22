@@ -61,8 +61,10 @@ export default function StartScreen() {
 
         {/* Visible Start Button */}
         <GlowButton
-          label="Start"
+          label={payload.isBinFull ? "Machine Full" : "Start"}
+          disabled={payload.isBinFull}
           onPress={() => {
+            if (payload.isBinFull) return;
             dispatch({ type: 'WAKE' });
             if (!DEV_MODE) {
               sendGPIOEvent({ action: 'WAKE' });
