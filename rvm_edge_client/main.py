@@ -377,19 +377,14 @@ class HardwareInterface:
         Returns a tuple: (is_valid, brand_name, size_category)
         """
         if not self.cv_available or self.model is None:
-            self.log("CV", "[SIMULATION] Running mock CV verification...")
-            time.sleep(1.5)
-            # Simulate a successful classification with typical class values
-            sim_brand = random.choice(["Le Minerale", "Nature spring", "Summit", "Wilkins pure"])
-            sim_size = random.choice(["350ml", "500ml", "600ml", "1000ml"])
-            return True, sim_brand, sim_size
+            self.log("CV", "CV engine or YOLO model weights missing. Failing verification.")
+            return False, "None", "None"
 
         self.log("CAM", "Starting camera module...")
         cap = self._open_camera()
         if not cap.isOpened():
-            self.log("CAM_ERR", "Camera not detected. Fallback: Simulating scan...")
-            time.sleep(1.5)
-            return True, "Le Minerale", "600ml"
+            self.log("CAM_ERR", "Camera not detected. Failing verification.")
+            return False, "None", "None"
 
         self.log("CV", "Analyzing image frames with YOLOv11 to confirm bottle...")
         
