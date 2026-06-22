@@ -266,7 +266,8 @@ class HardwareInterface:
                         if not self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor continuously blocked. Bin marked FULL.")
                             self._bin_full_confirmed = True
-                            self.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
+                            # Keep start button active: do not block UI with SET_BIN_FULL
+                            # self.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
                         
                         # Stable Red LED: LOW = ON (active-LOW)
                         GPIO.output(PIN_FAULT_LED, GPIO.LOW)
@@ -277,7 +278,7 @@ class HardwareInterface:
                         if self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
                             self._bin_full_confirmed = False
-                            self.display_ui("Bin cleared. Machine ready.", "CLEAR_BIN_FULL")
+                            # self.display_ui("Bin cleared. Machine ready.", "CLEAR_BIN_FULL")
                         
                         # Turn OFF Red LED: HIGH = OFF (active-LOW)
                         GPIO.output(PIN_FAULT_LED, GPIO.HIGH)
@@ -493,13 +494,13 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
 
         hw.log("SYS", "State: IDLE")
 
-        # Initial check for full storage capacity
-        is_full = hw.is_bin_full()
-        if is_full:
-            hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
-            hw.log("SYS", "Capacity Reached. System suspended for 5s.")
-            time.sleep(5)
-            continue  # Restart loop to check if bin was cleared
+        # Initial check for full storage capacity (disabled to keep start button active)
+        # is_full = hw.is_bin_full()
+        # if is_full:
+        #     hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
+        #     hw.log("SYS", "Capacity Reached. System suspended for 5s.")
+        #     time.sleep(5)
+        #     continue  # Restart loop to check if bin was cleared
 
         hw.display_ui("Press Start Button", "SYSTEM_CLEAR")
         ui_bridge.clear_queue()
@@ -514,20 +515,20 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     time.sleep(1)
                 hw.log("SYS", "UI client reconnected.")
                 
-            # If the bin becomes full while idling, suspend system
-            if hw.is_bin_full():
-                hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
-                hw.log("SYS", "Capacity Reached while idling. Suspending...")
-                time.sleep(5)
-                bin_became_full = True
-                break
+            # If the bin becomes full while idling, suspend system (disabled to keep start button active)
+            # if hw.is_bin_full():
+            #     hw.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
+            #     hw.log("SYS", "Capacity Reached while idling. Suspending...")
+            #     time.sleep(5)
+            #     bin_became_full = True
+            #     break
                 
             msg = ui_bridge.get_message(timeout=0.5)
             if msg and msg.get("action") == "WAKE":
                 break
                 
-        if bin_became_full:
-            continue
+        # if bin_became_full:
+        #     continue
 
         ui_bridge.broadcast("WAKE")
 
