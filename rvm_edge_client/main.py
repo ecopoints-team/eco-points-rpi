@@ -191,7 +191,7 @@ class HardwareInterface:
         try:
             GPIO.setmode(GPIO.BCM)
             GPIO.setup(PIN_BOTTLE_INSERTED, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-            GPIO.setup(PIN_BIN_FULL,        GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            GPIO.setup(PIN_BIN_FULL,        GPIO.IN, pull_up_down=GPIO.PUD_UP)
             GPIO.setup(PIN_DOOR_OPEN,       GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
             # Red Fault LED is wired ACTIVE-LOW (cathode → GPIO 27, anode → 3.3V).
@@ -243,8 +243,8 @@ class HardwareInterface:
 
     def _monitor_bin_full(self):
         # Continuous background scan of the curtain/bin-full sensor
-        consecutive_highs = 0
-        consecutive_lows = 0
+        consecutive_blocks = 0
+        consecutive_clears = 0
         required_high_time = 2.0  # seconds of continuous block to declare full
         required_low_time = 1.0   # seconds of continuous clear to declare normal
         poll_interval = 0.1       # scan every 100ms
@@ -254,10 +254,11 @@ class HardwareInterface:
         
         while True:
             try:
-                if GPIO.input(PIN_BIN_FULL) == GPIO.HIGH:
-                    consecutive_highs += 1
-                    consecutive_lows = 0
-                    if consecutive_highs >= high_threshold:
+                # Active-LOW: LOW (0) means blocked, HIGH (1) means clear
+                if GPIO.input(PIN_BIN_FULL) == GPIO.LOW:
+                    consecutive_blocks += 1
+                    consecutive_clears = 0
+                    if consecutive_blocks >= high_threshold:
                         if not self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor continuously blocked. Bin marked FULL.")
                             self._bin_full_confirmed = True
@@ -269,9 +270,9 @@ class HardwareInterface:
                         else:
                             GPIO.output(PIN_FAULT_LED, GPIO.HIGH)  # OFF
                 else:
-                    consecutive_lows += 1
-                    consecutive_highs = 0
-                    if consecutive_lows >= low_threshold:
+                    consecutive_clears += 1
+                    consecutive_blocks = 0
+                    if consecutive_clears >= low_threshold:
                         if self._bin_full_confirmed:
                             self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
                             self._bin_full_confirmed = False
