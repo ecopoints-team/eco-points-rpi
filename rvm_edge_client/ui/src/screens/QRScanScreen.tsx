@@ -53,6 +53,7 @@ export default function QRScanScreen() {
     Keyboard.dismiss();
 
     if (DEV_MODE) {
+      // DEV_MODE only: mock auth — not active in production (DEV_MODE=false)
       const result = await loginWithQR(data);
       if (result.success) {
         if (result.role && ['technician', 'superadmin', 'head_admin'].includes(result.role)) {
@@ -64,6 +65,7 @@ export default function QRScanScreen() {
         dispatch({ type: 'LOGIN_DENIED' });
       }
     } else {
+      // Production path: routes QR data to firmware via WebSocket
       sendGPIOEvent({ action: 'QR_SCANNED', qr_data: data });
     }
   };

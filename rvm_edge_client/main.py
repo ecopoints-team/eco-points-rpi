@@ -1,6 +1,7 @@
 import time
 import sys
 import random
+import logging
 from datetime import datetime
 import os
 import requests
@@ -42,23 +43,67 @@ except ImportError:
     PICAMERA2_AVAILABLE = False
 
 # --- CONFIGURATION (BCM Pin assignments matching README.md) ---
-PIN_BOTTLE_INSERTED = 17  # HIGH pulse when bottle is detected by sensor
-PIN_BIN_FULL        = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
-PIN_DOOR_OPEN       = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
+PIN_MOTOR_PULSE  = 12  # BCM 12 — step pulse
+PIN_MOTOR_DIR    = 16  # BCM 16 — direction
+PIN_MOTOR_ENABLE = 17  # BCM 17 — driver enable, active-LOW
+PIN_MOTOR_HOME   = 6   # BCM 6  — homing sensor SW2
+PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
+PIN_STROBE       = 22  # BCM 22 — Strobe light
+PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
+PIN_DOOR_OPEN    = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
+
+# --- POINTS CONFIGURATION ---
+# Fallback points lookup used when the backend config fetch fails (Req 3.3, 3.4).
+# Covers every size token that verify_bottle() can return.
+POINTS_DEFAULT: dict[str, int] = {
+    "extra small": 3, "xs": 3,
+    "small": 5, "s": 5,
+    "medium": 8, "m": 8,
+    "large": 10, "l": 10,
+    "1000ml": 10, "750ml": 10, "551ml": 10,
+    "600ml": 8, "550ml": 8, "500ml": 8, "351ml": 8,
+    "350ml": 5, "330ml": 5, "290ml": 5,
+    "289ml": 3, "250ml": 3, "125ml": 3,
+}
+
+
+def fetch_points_config(
+    backend_url: str,
+    org_id: int,
+    api_key: str,
+    fallback: dict[str, int],
+) -> dict[str, int]:
+    """
+    GET /api/rpi/config/points/<org_id> with a 10 s timeout.
+
+    Returns response["config"] dict on HTTP 200 + "config" key present.
+    Returns fallback on any error (network, timeout, non-200, missing key).
+    Logs a warning on failure.
+    """
+    try:
+        response = requests.get(
+            f"{backend_url}/api/rpi/config/points/{org_id}",
+            headers={"X-API-Key": api_key},
+            timeout=10,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            if "config" in data:
+                return data["config"]
+            print(f"[{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [NET     ] : Points config response missing 'config' key. Using defaults.")
+        else:
+            print(f"[{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [NET     ] : Points config fetch failed: HTTP {response.status_code}. Using defaults.")
+    except Exception as e:
+        print(f"[{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [NET     ] : Points config fetch failed: {e}. Using defaults.")
+    return fallback
 
 # Light Indicators
-PIN_FAULT_LED       = 27  # Red LED (BCM 27) — active-LOW (LOW=ON, HIGH=OFF)
+PIN_FAULT_LED    = 27  # Red LED (BCM 27) — active-LOW (LOW=ON, HIGH=OFF)
 # Note: The green LED is a hardwired power indicator (always ON when Pi has power).
 #       It is NOT connected to any GPIO pin and cannot be software-controlled.
-# PIN_STROBE_LED      = 22  # Strobe LED (BCM 22) - Not implemented yet
 
-# Global flag to track physical bottle insertion events from GPIO interrupt
+# Global flag to track physical bottle insertion events (via homing sensor / camera)
 physical_bottle_inserted = False
-
-def gpio_callback(channel):
-    global physical_bottle_inserted
-    print(f"[GPIO] Interrupt: Physical bottle insertion detected on BCM Pin {channel}!")
-    physical_bottle_inserted = True
 
 
 # --- UI BRIDGE ---
@@ -192,33 +237,38 @@ class HardwareInterface:
         
         try:
             GPIO.setmode(GPIO.BCM)
-            GPIO.setup(PIN_BOTTLE_INSERTED, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-            GPIO.setup(PIN_BIN_FULL,        GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            GPIO.setup(PIN_DOOR_OPEN,       GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+            # Motor outputs — safe initial states (Req 5.2, 5.6)
+            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=GPIO.HIGH)  # driver disabled (active-LOW)
+            GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
+            GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
+            GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
+            GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.LOW)   # strobe off
+
+            # Homing sensor — input with pull-up (LOW = home position reached)
+            GPIO.setup(PIN_MOTOR_HOME,   GPIO.IN,  pull_up_down=GPIO.PUD_UP)
+
+            # Existing sensor/indicator pins
+            GPIO.setup(PIN_BIN_FULL,     GPIO.IN,  pull_up_down=GPIO.PUD_UP)
+            GPIO.setup(PIN_DOOR_OPEN,    GPIO.IN,  pull_up_down=GPIO.PUD_DOWN)
 
             # Red Fault LED is wired ACTIVE-LOW (cathode → GPIO 27, anode → 3.3V).
             # HIGH = LED OFF, LOW = LED ON. Initial state: HIGH (OFF).
-            GPIO.setup(PIN_FAULT_LED,  GPIO.OUT, initial=GPIO.HIGH)
-            
-            # Setup hardware interrupt callback for the bottle insertion pulse
-            GPIO.add_event_detect(
-                PIN_BOTTLE_INSERTED, 
-                GPIO.RISING, 
-                callback=gpio_callback, 
-                bouncetime=500
-            )
+            GPIO.setup(PIN_FAULT_LED,    GPIO.OUT, initial=GPIO.HIGH)
         except Exception as e:
             print(f"[GPIO_ERR] Failed to configure GPIO pins: {e}")
             self.gpio_available = False
 
     def shutdown_gpio(self):
-        """Force Fault LED OFF then release all GPIO resources."""
+        """Drive motor/indicator pins to safe states then release all GPIO resources."""
         if not self.gpio_available:
             return
         try:
-            # Drive pin HIGH first so active-LOW LED turns OFF before cleanup
-            # reverts it to floating INPUT mode.
-            GPIO.output(PIN_FAULT_LED, GPIO.HIGH)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)  # disable driver (Req 5.7)
+            GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
+            GPIO.output(PIN_STROBE,       GPIO.LOW)   # strobe off (Req 5.7)
+            # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
+            GPIO.output(PIN_FAULT_LED,    GPIO.HIGH)
         except Exception:
             pass
         GPIO.cleanup()
@@ -238,6 +288,24 @@ class HardwareInterface:
             print(f"[CV_ERR] Failed to load YOLOv11 model: {e}")
             self.model = None
 
+    def _sync_bin_status(self, full: bool) -> None:
+        """Fire-and-forget POST to /api/rpi/machine/status. Runs in a daemon thread (Req 2.6)."""
+        def _worker():
+            try:
+                resp = requests.post(
+                    f"{BACKEND_URL}/api/rpi/machine/status",
+                    headers={"X-API-Key": API_KEY},
+                    json={"machineUuid": MACHINE_ID, "isCapacityFull": full},
+                    timeout=10,
+                )
+                if resp.status_code not in (200, 201):
+                    self.log("NET_WARN", f"machine/status returned {resp.status_code} (isCapacityFull={full})")
+            except Exception as exc:
+                self.log("NET_WARN", f"machine/status POST failed: {exc}")
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
     def _start_bin_monitor(self):
         if self.gpio_available:
             t = threading.Thread(target=self._monitor_bin_full, daemon=True)
@@ -256,18 +324,19 @@ class HardwareInterface:
         
         while True:
             try:
-                # NC NPN Sensor under Pull-Up: 
-                # HIGH (1) = blocked (sensor floats, pull-up drives it HIGH)
-                # LOW (0)  = clear (sensor conducts to GND)
+                # NC NPN Sensor under Pull-Up:
+                # HIGH (1) = blocked (sensor floats, pull-up drives it HIGH) → bin FULL
+                # LOW  (0) = clear  (sensor conducts to GND)                 → bin CLEAR
                 if GPIO.input(PIN_BIN_FULL) == GPIO.HIGH:
                     consecutive_blocks += 1
                     consecutive_clears = 0
                     if consecutive_blocks >= high_threshold:
                         if not self._bin_full_confirmed:
+                            # False → True edge transition (Req 2.1, 2.2)
                             self.log("GPIO", "Curtain sensor continuously blocked. Bin marked FULL.")
                             self._bin_full_confirmed = True
-                            # Keep start button active: do not block UI with SET_BIN_FULL
-                            # self.display_ui("Sorry, machine is currently full. Please try again later.", "SET_BIN_FULL")
+                            self._sync_bin_status(True)
+                            ui_bridge.broadcast("SET_BIN_FULL")
                         
                         # Stable Red LED: LOW = ON (active-LOW)
                         GPIO.output(PIN_FAULT_LED, GPIO.LOW)
@@ -276,9 +345,11 @@ class HardwareInterface:
                     consecutive_blocks = 0
                     if consecutive_clears >= low_threshold:
                         if self._bin_full_confirmed:
+                            # True → False edge transition (Req 2.3, 2.4)
                             self.log("GPIO", "Curtain sensor cleared. Bin marked NORMAL.")
                             self._bin_full_confirmed = False
-                            # self.display_ui("Bin cleared. Machine ready.", "CLEAR_BIN_FULL")
+                            self._sync_bin_status(False)
+                            ui_bridge.broadcast("CLEAR_BIN_FULL")
                         
                         # Turn OFF Red LED: HIGH = OFF (active-LOW)
                         GPIO.output(PIN_FAULT_LED, GPIO.HIGH)
@@ -334,9 +405,39 @@ class HardwareInterface:
         except Exception as e:
             self.log("USB_ERR", f"Failed to run uhubctl: {e}")
 
-    def spin_motor(self, duration=1.2):
+    def spin_motor(self, steps: int = 200) -> None:
+        """
+        Drives stepper motor for `steps` pulses (Req 5.3, 5.4, 5.5).
+        Sets DIR HIGH (forward), enables driver (ENABLE LOW, active-LOW),
+        turns on IN_PROGRESS indicator (LOW, active-LOW) and STROBE (HIGH).
+        Pulses MOTOR_PULSE: HIGH 0.5 ms → LOW 0.5 ms, stopping early if
+        homing sensor (PIN_MOTOR_HOME) reads LOW.
+        Finally: disables driver (ENABLE HIGH), turns off indicator/strobe.
+        Simulation fallback (GPIO unavailable): time.sleep(steps * 0.001).
+        """
         self.log("MOTOR", "Activating sorting actuator/conveyor...")
-        time.sleep(duration)
+        if self.gpio_available:
+            try:
+                GPIO.output(PIN_MOTOR_DIR,    GPIO.HIGH)  # forward direction
+                GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)   # enable driver (active-LOW)
+                GPIO.output(PIN_IN_PROGRESS,  GPIO.LOW)   # turn on indicator (active-LOW)
+                GPIO.output(PIN_STROBE,       GPIO.HIGH)  # turn on strobe
+                for _ in range(steps):
+                    if GPIO.input(PIN_MOTOR_HOME) == GPIO.LOW:
+                        self.log("MOTOR", "Homing sensor triggered. Stopping early.")
+                        break
+                    GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+                    time.sleep(0.0005)  # 0.5 ms HIGH
+                    GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+                    time.sleep(0.0005)  # 0.5 ms LOW
+            except Exception as e:
+                self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
+            finally:
+                GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)  # disable driver (Req 5.7)
+                GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off
+                GPIO.output(PIN_STROBE,       GPIO.LOW)   # strobe off
+        else:
+            time.sleep(steps * 0.001)  # simulation fallback (Req 5.5)
         self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
 
     def _open_camera(self):
@@ -390,20 +491,21 @@ class HardwareInterface:
         cap = cv2.VideoCapture(0)
         return cap
 
-    def verify_bottle(self):
+    def verify_bottle(self) -> tuple[bool, str, str, float]:
         """
         Uses the camera and YOLOv11 model to verify and classify the inserted bottle.
-        Returns a tuple: (is_valid, brand_name, size_category)
+        Returns a 4-tuple: (is_valid, brand_name, size_category, confidence_score)
+        confidence_score is 0.0 when is_valid=False.
         """
         if not self.cv_available or self.model is None:
             self.log("CV", "CV engine or YOLO model weights missing. Failing verification.")
-            return False, "None", "None"
+            return False, "None", "None", 0.0
 
         self.log("CAM", "Starting camera module...")
         cap = self._open_camera()
         if not cap.isOpened():
             self.log("CAM_ERR", "Camera not detected. Failing verification.")
-            return False, "None", "None"
+            return False, "None", "None", 0.0
 
         self.log("CV", "Analyzing image frames with YOLOv11 to confirm bottle...")
         
@@ -468,10 +570,67 @@ class HardwareInterface:
                 brand = best_class
                 size = "Medium"
                 
-            return True, brand, size
+            return True, brand, size, best_conf
 
         self.log("CV", "No valid beverage bottles consistently recognized in the chute.")
-        return False, "None", "None"
+        return False, "None", "None", 0.0
+
+
+# --- HEARTBEAT ---
+def _heartbeat_worker(hw, backend_url, machine_id, api_key, interval=30):
+    """Runs in daemon thread. POSTs heartbeat every `interval` seconds. Never raises."""
+    while True:
+        try:
+            payload = {
+                "machineUuid": machine_id,
+                "isCapacityFull": hw.is_bin_full(),
+            }
+            resp = requests.post(
+                f"{backend_url}/api/rpi/machine/heartbeat",
+                headers={"X-API-Key": api_key},
+                json=payload,
+                timeout=10,
+            )
+            if resp.status_code not in (200, 201):
+                logging.warning(
+                    "[HEARTBEAT] Server returned %s", resp.status_code
+                )
+        except Exception as exc:
+            logging.warning("[HEARTBEAT] POST failed: %s", exc)
+        time.sleep(interval)
+
+
+def start_heartbeat_thread(hw):
+    """Creates and starts a daemon heartbeat thread. Returns the thread."""
+    t = threading.Thread(
+        target=_heartbeat_worker,
+        args=(hw, BACKEND_URL, MACHINE_ID, API_KEY),
+        daemon=True,
+    )
+    t.start()
+    return t
+
+
+# --- SESSION HELPERS ---
+
+def wait_for_action(ui_bridge, accepted_actions, timeout_seconds=300.0):
+    """
+    Polls ui_bridge for a message matching one of the accepted_actions.
+
+    Returns the action string on match, or None on timeout / UI disconnect.
+    Timeout is enforced with a monotonic clock; each poll sub-interval is 0.5 s.
+    (Req 4.1, 4.5)
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if not ui_bridge.clients:
+            return None
+        msg = ui_bridge.get_message(timeout=0.5)
+        if msg is not None:
+            action = msg.get("action")
+            if action in accepted_actions:
+                return action
+    return None
 
 
 # --- MAIN FIRMWARE PROCESS ---
@@ -479,7 +638,26 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
     global physical_bottle_inserted
     
     hw.boot_sequence()
+    start_heartbeat_thread(hw)
 
+    # --- IDENTIFY: obtain org_id for points config fetch ---
+    org_id = None
+    try:
+        identify_resp = requests.post(
+            f"{BACKEND_URL}/api/rpi/machine/identify",
+            headers={"X-API-Key": API_KEY},
+            json={"machineUuid": MACHINE_ID},
+            timeout=10,
+        )
+        if identify_resp.status_code in (200, 201):
+            org_id = identify_resp.json().get("organizationId")
+            hw.log("NET", f"Machine identified. org_id={org_id}")
+        else:
+            hw.log("NET", f"Identify returned HTTP {identify_resp.status_code}. org_id unknown; using default points.")
+    except Exception as _exc:
+        hw.log("NET", f"Identify call failed: {_exc}. Using default points config.")
+
+    points_config = fetch_points_config(BACKEND_URL, org_id, API_KEY, fallback=POINTS_DEFAULT)
 
     user_total_points = 0
 
@@ -502,7 +680,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         #     time.sleep(5)
         #     continue  # Restart loop to check if bin was cleared
 
-        hw.display_ui("Press Start Button", "SYSTEM_CLEAR")
+        hw.display_ui("Press Start Button", "GO_IDLE")
         ui_bridge.clear_queue()
         
         # Wait for the screen tap wake-up event or bin full triggers
@@ -767,10 +945,10 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             hw.log("PROC", "Analyzing object in chute...")
             
             # Spin conveyor motor to move bottle into camera viewport
-            hw.spin_motor(duration=1.2)
+            hw.spin_motor()  # default steps=200
             
             # Execute CV classification
-            is_valid, brand_name, size_category = hw.verify_bottle()
+            is_valid, brand_name, size_category, confidence = hw.verify_bottle()
             
             if not is_valid:
                 hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
@@ -779,22 +957,26 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 })
                 hw.log("MECH", "Unlocking door for removal...")
                 
-                # Wait for user to decide to try again or finish
+                # Wait for user to decide to try again or finish (Req 4.1, 4.2, 4.3, 4.6)
                 hw.log("SYS", "Waiting for user action on rejection screen...")
-                retry = False
-                while True:
-                    if not ui_bridge.clients:
-                        break
-                    msg = ui_bridge.get_message(timeout=0.5)
-                    if msg:
-                        if msg.get("action") == "REPEAT_READY":
-                            retry = True
-                            break
-                        elif msg.get("action") in ("FINISH", "CANCEL"):
-                            retry = False
-                            break
-                
-                if retry:
+                action = wait_for_action(ui_bridge, ["REPEAT_READY", "FINISH", "CANCEL"])
+                if action is None:
+                    # Timeout path (Req 4.2, 4.3, 4.6)
+                    hw.log("SYS", "Session timed out on rejection screen.")
+                    try:
+                        requests.post(
+                            f"{BACKEND_URL}/api/rpi/session/{session_id}/end",
+                            json={"status": "timed_out", "machineUuid": MACHINE_ID},
+                            headers={"X-API-Key": API_KEY},
+                            timeout=10,
+                        )
+                    except Exception as e:
+                        hw.log("NET_ERR", f"Session end (timed_out) failed: {e}")
+                    ui_bridge.broadcast("ADVANCE_THANK_YOU")
+                    transacting = False
+                    break
+
+                if action == "REPEAT_READY":
                     continue
                 else:
                     transacting = False
@@ -802,35 +984,10 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             else:
                 hw.log("INFO", f"Verified successfully: {brand_name} ({size_category})")
                 
-                # Map sizes to points values
-                points = 10
-                cls_lower = f"{brand_name} {size_category}".lower()
-                
-                if "extra small" in cls_lower or "xs" in cls_lower.split():
-                    points = 3
-                    size_category = "Extra Small"
-                elif "small" in cls_lower or "s" in cls_lower.split():
-                    points = 5
-                    size_category = "Small"
-                elif "medium" in cls_lower or "m" in cls_lower.split():
-                    points = 8
-                    size_category = "Medium"
-                elif "large" in cls_lower or "l" in cls_lower.split():
-                    points = 10
-                    size_category = "Large"
-                else:
-                    if "1000ml" in cls_lower or "750ml" in cls_lower or "551ml" in cls_lower:
-                        points = 10
-                        size_category = "Large"
-                    elif "500ml" in cls_lower or "600ml" in cls_lower or "550ml" in cls_lower or "351ml" in cls_lower:
-                        points = 8
-                        size_category = "Medium"
-                    elif "350ml" in cls_lower or "330ml" in cls_lower or "290ml" in cls_lower:
-                        points = 5
-                        size_category = "Small"
-                    elif "289ml" in cls_lower or "250ml" in cls_lower or "125ml" in cls_lower:
-                        points = 3
-                        size_category = "Extra Small"
+                # Map size token to points via fetched config (falls back to POINTS_DEFAULT)
+                best_class = f"{brand_name} {size_category}"
+                size_token = best_class.split()[-1].lower() if best_class else ""
+                points = points_config.get(size_token, POINTS_DEFAULT.get(size_token, 5))
 
                 user_total_points += points
                 
@@ -839,7 +996,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     response = requests.post(f"{BACKEND_URL}/api/rpi/session/{session_id}/deposit", headers={"X-API-Key": API_KEY}, json={
                         "machineUuid": MACHINE_ID,
                         "detectedClass": brand_name,
-                        "confidenceScore": 0.95,
+                        "confidenceScore": round(confidence, 4),
                         "pointsAwarded": points,
                         "status": "Accepted"
                     })
@@ -856,23 +1013,26 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 })
                 hw.display_ui(f"Your Total Points : {user_total_points} pts")
                 
-                # Wait for user choice (another bottle or finish)
+                # Wait for user choice (another bottle or finish) (Req 4.1, 4.2, 4.3, 4.6)
                 hw.log("SYS", "Waiting for user action (Repeat/Finish)...")
-                again = None
-                while True:
-                    if not ui_bridge.clients:
-                        again = False
-                        break
-                    msg = ui_bridge.get_message(timeout=0.5)
-                    if msg:
-                        if msg.get("action") == "REPEAT_READY":
-                            again = True
-                            break
-                        elif msg.get("action") == "FINISH":
-                            again = False
-                            break
-                
-                if again:
+                action = wait_for_action(ui_bridge, ["REPEAT_READY", "FINISH"])
+                if action is None:
+                    # Timeout path (Req 4.2, 4.3, 4.6)
+                    hw.log("SYS", "Session timed out on acceptance screen.")
+                    try:
+                        requests.post(
+                            f"{BACKEND_URL}/api/rpi/session/{session_id}/end",
+                            json={"status": "timed_out", "machineUuid": MACHINE_ID},
+                            headers={"X-API-Key": API_KEY},
+                            timeout=10,
+                        )
+                    except Exception as e:
+                        hw.log("NET_ERR", f"Session end (timed_out) failed: {e}")
+                    ui_bridge.broadcast("ADVANCE_THANK_YOU")
+                    transacting = False
+                    break
+
+                if action == "REPEAT_READY":
                     hw.log("SYS", "User selected transact again. Looping...")
                     continue
                 else:

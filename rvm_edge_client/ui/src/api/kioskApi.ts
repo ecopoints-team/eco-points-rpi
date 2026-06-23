@@ -5,8 +5,8 @@ const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 // ── Toggle these flags to simulate different outcomes ──
 const MOCK_LOGIN_SUCCESS = true;
-const MOCK_VERIFY_SUCCESS = true;
 
+// DEV_MODE only — not called in production (DEV_MODE=false)
 export async function loginWithQR(
   _token: string
 ): Promise<{ success: boolean; userName: string; role?: string }> {
@@ -18,34 +18,10 @@ export async function loginWithQR(
   return { success: false, userName: '' };
 }
 
-export async function getVerificationResult(): Promise<{
-  accepted: boolean;
-  points: number;
-  bottleCount: number;
-  reason?: string;
-}> {
-  await delay(2500);
-  if (MOCK_VERIFY_SUCCESS) {
-    return { accepted: true, points: 15, bottleCount: 3 };
-  }
-  return {
-    accepted: false,
-    points: 0,
-    bottleCount: 0,
-    reason: 'Non-recyclable material detected.',
-  };
-}
-
-export async function getSystemStatus(): Promise<{
-  binFull: boolean;
-  doorOpen: boolean;
-}> {
-  await delay(200);
-  return { binFull: false, doorOpen: false };
-}
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api/web';
 
+// DEV_MODE only — production routes through sendGPIOEvent('SUBMIT_LOG')
 export async function submitMachineLog(payload: {
   actionType: string;
   status: string;
