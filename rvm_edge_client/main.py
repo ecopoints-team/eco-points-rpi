@@ -21,6 +21,13 @@ SHOW_CV_WINDOW = os.getenv("CLI_MODE", "false").lower() == "true"
 UHUBCTL_LOCATIONS = os.getenv("UHUBCTL_LOCATIONS", "")
 UHUBCTL_PORT = os.getenv("UHUBCTL_PORT", "")
 
+# ---------------------------------------------------------------------------
+# Test-isolation stop flag
+# ---------------------------------------------------------------------------
+# Tests can set this event to break the run_ecopoints_firmware() infinite loop
+# cleanly.  In production it is never set.
+_firmware_stop_event = threading.Event()
+
 # --- HARDWARE LIBRARIES (CONDITIONAL IMPORT FOR PORTABILITY) ---
 try:
     import RPi.GPIO as GPIO
@@ -662,11 +669,21 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
     user_total_points = 0
 
     while True:
+        # --- TEST ISOLATION STOP POINT ---
+        # Tests set _firmware_stop_event to cleanly break the infinite loop
+        # without killing the process.  In production this is never set.
+        if _firmware_stop_event.is_set():
+            hw.log("SYS", "Stop event received. Firmware loop exiting (test isolation).")
+            return
+
         # --- STATE: IDLE / WELCOME ---
         # Wait for at least one Kiosk UI client to connect first
         if not ui_bridge.clients:
             hw.log("SYS", "Waiting for Kiosk UI client to connect on ws://localhost:8765 ...")
             while not ui_bridge.clients:
+                if _firmware_stop_event.is_set():
+                    hw.log("SYS", "Stop event received during client wait. Exiting.")
+                    return
                 time.sleep(1)
             hw.log("SYS", "Kiosk UI client connected! Starting session...")
 

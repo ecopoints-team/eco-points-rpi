@@ -37,8 +37,8 @@ import main  # noqa: E402
 SESSION_ID = "timeout-session-42"
 WALLET_ID = "wallet-99"
 BACKEND_URL = "http://testserver"
-MACHINE_ID = "TEST-001"
-API_KEY = "test_key"
+MACHINE_ID = main.MACHINE_ID  # Use the actual runtime constant, not a hardcoded literal
+API_KEY = main.API_KEY
 
 # Short timeout so the test completes quickly.
 # wait_for_action is patched to default to this value.
@@ -165,6 +165,83 @@ def _short_wait_for_action(ui_bridge_arg, accepted_actions, timeout_seconds=SHOR
 # Test
 # ---------------------------------------------------------------------------
 
+class _IsolatedBridge:
+    """
+    Self-contained bridge substitute used only for this test.
+
+    Uses its own queue and client set so the firmware daemon thread
+    never touches the real ``main.ui_bridge`` singleton.  That keeps
+    later tests (e.g. TestFirmwareLoopNormalSession) from seeing
+    spurious messages injected by a still-running firmware thread.
+
+    After ``seal()`` is called, ``clients`` is permanently empty and
+    ``get_message`` always blocks for ``timeout`` seconds then returns
+    None — trapping any daemon thread still using this bridge in the
+    firmware's ``while not ui_bridge.clients: time.sleep(1)`` loop.
+    """
+
+    def __init__(self):
+        import queue as _q
+        self._sealed = False
+        self.clients = set()
+        self.queue = _q.Queue()
+        self.broadcasts: list = []
+
+    def seal(self) -> None:
+        """Permanently make this bridge look like it has no clients."""
+        self._sealed = True
+        self.clients = _SealedClientSet()
+        self.clear_queue()
+
+    def put(self, msg: dict) -> None:
+        if not self._sealed:
+            self.queue.put(msg)
+
+    def get_message(self, timeout=None):
+        import queue as _q
+        try:
+            return self.queue.get(timeout=timeout)
+        except _q.Empty:
+            return None
+
+    def clear_queue(self) -> None:
+        import queue as _q
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except _q.Empty:
+                break
+
+    def broadcast(self, event_type, data=None) -> None:
+        if not self._sealed:
+            self.broadcasts.append(event_type)
+
+    def start(self) -> None:  # no-op — no real WS server needed
+        pass
+
+
+class _SealedClientSet(set):
+    """
+    A set that is permanently empty regardless of add() calls.
+
+    Used to trap a firmware daemon thread in the
+    ``while not ui_bridge.clients: time.sleep(1)`` loop after the test
+    has finished so it cannot steal messages from subsequent tests.
+    """
+
+    def __bool__(self):  # type: ignore[override]
+        return False  # always falsy — "no clients"
+
+    def __len__(self):
+        return 0
+
+    def add(self, item):  # ignore any add attempts
+        pass
+
+    def discard(self, item):
+        pass
+
+
 def test_session_timeout_path():
     """
     **Validates: Requirements 4.2, 4.3, 4.6**
@@ -178,84 +255,86 @@ def test_session_timeout_path():
     mock_post, mock_get, call_log = _build_mock_requests(SESSION_ID)
     mock_hw = _build_mock_hw()
 
-    # Track broadcast calls
-    broadcast_calls = []
-    original_broadcast = main.ui_bridge.broadcast
-
-    def recording_broadcast(event_type, data=None):
-        broadcast_calls.append(event_type)
-        # Call original so firmware doesn't error — but clients set is empty in test,
-        # so original broadcast is effectively a no-op anyway.
-        try:
-            original_broadcast(event_type, data)
-        except Exception:
-            pass
-
-    # Ensure ui_bridge has a fake connected client so wait_for_action doesn't
-    # return None immediately due to empty clients set.
+    # Isolated bridge — firmware daemon thread only sees this object,
+    # never the real main.ui_bridge singleton.
+    isolated_bridge = _IsolatedBridge()
+    # Add a fake client so wait_for_action doesn't exit early.
     fake_client = MagicMock()
-    main.ui_bridge.clients.add(fake_client)
+    isolated_bridge.clients.add(fake_client)
 
-    # Patch broadcast to record calls
-    main.ui_bridge.broadcast = recording_broadcast
+    def inject_into_isolated():
+        """Same injection logic as _inject_messages() but targets isolated_bridge."""
+        def _worker():
+            time.sleep(1.0)
+            isolated_bridge.put({"action": "WAKE"})
+            time.sleep(0.5)
+            isolated_bridge.put({"action": "QR_SCANNED", "qr_data": "test-qr-payload"})
+            time.sleep(1.5)
+            isolated_bridge.put({"action": "BOTTLE_INSERTED"})
+            # No FINISH/REPEAT_READY — triggers timeout path.
 
-    try:
-        with patch("main.requests.post", side_effect=mock_post), \
-             patch("main.requests.get", side_effect=mock_get), \
-             patch("main.wait_for_action", side_effect=_short_wait_for_action):
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        return t
 
-            # Start firmware in daemon thread
-            fw_thread = threading.Thread(
-                target=main.run_ecopoints_firmware,
-                args=(mock_hw,),
-                daemon=True,
-            )
-            fw_thread.start()
+    with patch("main.requests.post", side_effect=mock_post), \
+         patch("main.requests.get", side_effect=mock_get), \
+         patch("main.wait_for_action", side_effect=_short_wait_for_action), \
+         patch.object(main, "ui_bridge", isolated_bridge):
 
-            # Inject message sequence
-            _inject_messages()
-
-            # Wait long enough for: boot + QR auth + deposit + SHORT_TIMEOUT + buffer
-            fw_thread.join(timeout=TEST_BUDGET)
-
-        # -----------------------------------------------------------------------
-        # Assert 1: POST /session/<id>/end with status="timed_out"  (Req 4.2, 4.6)
-        # -----------------------------------------------------------------------
-        end_calls = [
-            (url, body)
-            for method, url, body in call_log
-            if method == "POST" and f"/session/{SESSION_ID}/end" in url
-        ]
-
-        assert len(end_calls) >= 1, (
-            f"Expected at least 1 POST to /session/{SESSION_ID}/end, got 0.\n"
-            f"All calls:\n" + "\n".join(f"  {m} {u}" for m, u, _ in call_log)
+        # Start firmware in daemon thread
+        fw_thread = threading.Thread(
+            target=main.run_ecopoints_firmware,
+            args=(mock_hw,),
+            daemon=True,
         )
+        fw_thread.start()
 
-        # Find the timed_out call specifically
-        timed_out_calls = [
-            (url, body)
-            for url, body in end_calls
-            if body.get("status") == "timed_out"
-        ]
-        assert len(timed_out_calls) >= 1, (
-            f"No /session/end POST with status='timed_out' found.\n"
-            f"end calls: {end_calls}"
-        )
+        # Inject message sequence into the isolated bridge
+        inject_into_isolated()
 
-        url, body = timed_out_calls[0]
-        assert body.get("machineUuid") == MACHINE_ID, (
-            f"machineUuid mismatch: expected {MACHINE_ID!r}, got {body.get('machineUuid')!r}"
-        )
+        # Wait long enough for: boot + QR auth + deposit + SHORT_TIMEOUT + buffer
+        fw_thread.join(timeout=TEST_BUDGET)
 
-        # -----------------------------------------------------------------------
-        # Assert 2: ADVANCE_THANK_YOU broadcast  (Req 4.3)
-        # -----------------------------------------------------------------------
-        assert "ADVANCE_THANK_YOU" in broadcast_calls, (
-            f"ADVANCE_THANK_YOU not broadcast. Broadcast calls: {broadcast_calls}"
-        )
+        # Drain the isolated bridge and remove all clients so the still-running
+        # daemon firmware thread gets stuck in the "no clients" sleep loop
+        # (``while not ui_bridge.clients: time.sleep(1)``).  This prevents it
+        # from stealing messages from later tests that patch main.ui_bridge.
+        isolated_bridge.seal()
 
-    finally:
-        # Clean up: remove fake client and restore original broadcast
-        main.ui_bridge.clients.discard(fake_client)
-        main.ui_bridge.broadcast = original_broadcast
+    # -----------------------------------------------------------------------
+    # Assert 1: POST /session/<id>/end with status="timed_out"  (Req 4.2, 4.6)
+    # -----------------------------------------------------------------------
+    end_calls = [
+        (url, body)
+        for method, url, body in call_log
+        if method == "POST" and f"/session/{SESSION_ID}/end" in url
+    ]
+
+    assert len(end_calls) >= 1, (
+        f"Expected at least 1 POST to /session/{SESSION_ID}/end, got 0.\n"
+        f"All calls:\n" + "\n".join(f"  {m} {u}" for m, u, _ in call_log)
+    )
+
+    # Find the timed_out call specifically
+    timed_out_calls = [
+        (url, body)
+        for url, body in end_calls
+        if body.get("status") == "timed_out"
+    ]
+    assert len(timed_out_calls) >= 1, (
+        f"No /session/end POST with status='timed_out' found.\n"
+        f"end calls: {end_calls}"
+    )
+
+    url, body = timed_out_calls[0]
+    assert body.get("machineUuid") == MACHINE_ID, (
+        f"machineUuid mismatch: expected {MACHINE_ID!r}, got {body.get('machineUuid')!r}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assert 2: ADVANCE_THANK_YOU broadcast  (Req 4.3)
+    # -----------------------------------------------------------------------
+    assert "ADVANCE_THANK_YOU" in isolated_bridge.broadcasts, (
+        f"ADVANCE_THANK_YOU not broadcast. Broadcast calls: {isolated_bridge.broadcasts}"
+    )

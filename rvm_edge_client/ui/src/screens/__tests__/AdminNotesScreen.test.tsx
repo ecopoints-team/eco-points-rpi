@@ -20,8 +20,35 @@ jest.mock('../../api/kioskApi', () => ({
   submitMachineLog: jest.fn(),
 }));
 
-// Silence Animated warnings in test environment
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
+// Mock heavy visual sub-components that use native animations/graphics
+jest.mock('../../components/BackgroundGlow', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return ({ children, style }: any) => React.createElement(View, { style }, children);
+});
+
+jest.mock('../../components/LogoHeader', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return () => React.createElement(View, null);
+});
+
+jest.mock('../../components/StatusBadge', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return () => React.createElement(View, null);
+});
+
+jest.mock('../../components/GlowButton', () => {
+  const React = require('react');
+  const { TouchableOpacity, Text } = require('react-native');
+  return ({ label, onPress, disabled }: any) =>
+    React.createElement(
+      TouchableOpacity,
+      { onPress, disabled, testID: label },
+      React.createElement(Text, null, label)
+    );
+});
 
 import AdminNotesScreen from '../AdminNotesScreen';
 import { sendGPIOEvent } from '../../hooks/useGPIOBridge';

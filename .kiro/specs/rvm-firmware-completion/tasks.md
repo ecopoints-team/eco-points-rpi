@@ -51,7 +51,7 @@ Completes the 12 production gaps in `rvm_edge_client/main.py` and `ui/src/`. All
     - Use `hypothesis` `@given(st.sampled_from([list of all 21 tokens]))` to assert `POINTS_DEFAULT[token] > 0` for every token
     - **Validates: Requirements 3.3, 3.4**
 
-- [ ] 4. Checkpoint — run existing tests, verify startup sequence
+- [x] 4. Checkpoint — run existing tests, verify startup sequence
   - Ensure `python main.py` boots without error with `DISABLE_GPIO=true CLI_MODE=true`
   - Ensure `POINTS_DEFAULT` and `fetch_points_config` callable from REPL
 
@@ -173,7 +173,7 @@ Completes the 12 production gaps in `rvm_edge_client/main.py` and `ui/src/`. All
     - `UHUBCTL_LOCATIONS` and `UHUBCTL_PORT` comments note they may be left empty if `uhubctl` is not used
     - _Requirements: 12.1, 12.2, 12.3, 12.4_
 
-- [ ] 15. Integration test: full session flow with mocked GPIO and requests
+- [x] 15. Integration test: full session flow with mocked GPIO and requests
   - [x] 15.1 Write integration test for normal session (completed)
     - Start firmware loop with `DISABLE_GPIO=true`, mock `requests` module
     - Inject WS messages: `WAKE` → `QR_SCANNED` → `BOTTLE_INSERTED` → `FINISH`
