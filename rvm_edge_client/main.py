@@ -250,7 +250,7 @@ class HardwareInterface:
             GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
-            GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.LOW)   # strobe off
+            GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (assuming active-LOW like others)
 
             # Homing sensor — input with pull-up (LOW = home position reached)
             GPIO.setup(PIN_MOTOR_HOME,   GPIO.IN,  pull_up_down=GPIO.PUD_UP)
@@ -273,7 +273,7 @@ class HardwareInterface:
         try:
             GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)  # disable driver (Req 5.7)
             GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
-            GPIO.output(PIN_STROBE,       GPIO.LOW)   # strobe off (Req 5.7)
+            GPIO.output(PIN_STROBE,       GPIO.HIGH)  # strobe off (active-LOW)
             # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
             GPIO.output(PIN_FAULT_LED,    GPIO.HIGH)
         except Exception:
@@ -985,10 +985,10 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             
             # Execute CV classification
             if hw.gpio_available:
-                GPIO.output(PIN_STROBE, GPIO.HIGH)
+                GPIO.output(PIN_STROBE, GPIO.LOW) # Turn ON
             is_valid, brand_name, size_category, confidence = hw.verify_bottle()
             if hw.gpio_available:
-                GPIO.output(PIN_STROBE, GPIO.LOW)
+                GPIO.output(PIN_STROBE, GPIO.HIGH) # Turn OFF
             
             if not is_valid:
                 hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
