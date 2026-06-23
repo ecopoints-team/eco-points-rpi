@@ -53,7 +53,7 @@ except ImportError:
 # --- CONFIGURATION (BCM Pin assignments matching README.md) ---
 PIN_MOTOR_PULSE  = 12  # BCM 12 — step pulse
 PIN_MOTOR_DIR    = 16  # BCM 16 — direction
-PIN_MOTOR_ENABLE = 17  # BCM 17 — driver enable, active-LOW
+PIN_MOTOR_ENABLE = 17  # BCM 17 — driver enable, active-HIGH (inverted)
 PIN_MOTOR_HOME   = 6   # BCM 6  — homing sensor SW2
 PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
 PIN_STROBE       = 22  # BCM 22 — Strobe light
@@ -247,7 +247,7 @@ class HardwareInterface:
             GPIO.setmode(GPIO.BCM)
 
             # Motor outputs — safe initial states (Req 5.2, 5.6)
-            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=GPIO.HIGH)  # driver disabled (active-LOW)
+            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=GPIO.LOW)   # driver disabled (active-HIGH)
             GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
@@ -258,7 +258,7 @@ class HardwareInterface:
 
             # Existing sensor/indicator pins
             GPIO.setup(PIN_BIN_FULL,     GPIO.IN,  pull_up_down=GPIO.PUD_UP)
-            GPIO.setup(PIN_DOOR_OPEN,    GPIO.IN,  pull_up_down=GPIO.PUD_DOWN)
+            GPIO.setup(PIN_DOOR_OPEN,    GPIO.IN,  pull_up_down=GPIO.PUD_UP)
 
             # Red Fault LED is wired ACTIVE-LOW (cathode → GPIO 27, anode → 3.3V).
             # HIGH = LED OFF, LOW = LED ON. Initial state: HIGH (OFF).
@@ -272,7 +272,7 @@ class HardwareInterface:
         if not self.gpio_available:
             return
         try:
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)  # disable driver (Req 5.7)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)   # disable driver (Req 5.7, active-HIGH)
             GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
             GPIO.output(PIN_STROBE,       GPIO.HIGH)  # strobe off (active-LOW)
             # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
@@ -374,7 +374,7 @@ class HardwareInterface:
         if not self.gpio_available:
             return False
         try:
-            return GPIO.input(PIN_DOOR_OPEN) == GPIO.HIGH
+            return GPIO.input(PIN_DOOR_OPEN) == GPIO.LOW
         except Exception:
             return False
 
@@ -444,8 +444,8 @@ class HardwareInterface:
             return
 
         try:
-            # Enable motor (active-LOW)
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
+            # Enable motor (active-HIGH)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
             
             # Open Sequence
             self.log("MOTOR", "Opening dispenser...")
@@ -475,7 +475,7 @@ class HardwareInterface:
             self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
         finally:
             # Disable motor
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
 
     def _open_camera(self):
         """
@@ -1005,10 +1005,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             hw.log("SCALE", "Taring scale...")
             hw.log("PROC", "Analyzing object in chute...")
             
-            # Spin conveyor motor to move bottle into camera viewport
-            hw.spin_motor()  # default steps=200
-            
-            # Execute CV classification
+            # Execute CV classification first
             if hw.gpio_available and GPIO:
                 GPIO.output(PIN_STROBE, GPIO.LOW) # Turn ON
             is_valid, brand_name, size_category, confidence = hw.verify_bottle()
@@ -1050,6 +1047,9 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     break
             else:
                 hw.log("INFO", f"Verified successfully: {brand_name} ({size_category})")
+                
+                # Spin conveyor motor to drop the bottle after successful verification
+                hw.spin_motor()
                 
                 # Map size token to points via fetched config (falls back to POINTS_DEFAULT)
                 best_class = f"{brand_name} {size_category}"
