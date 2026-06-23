@@ -53,9 +53,9 @@ except ImportError:
 # --- CONFIGURATION (BCM Pin assignments matching README.md) ---
 PIN_MOTOR_PULSE  = 12  # BCM 12 — step pulse
 PIN_MOTOR_DIR    = 16  # BCM 16 — direction
-PIN_MOTOR_ENABLE = 17  # BCM 17 — driver enable, active-HIGH (inverted)
+PIN_MOTOR_ENABLE = 17  # BCM 17 — driver enable, active-LOW
 PIN_MOTOR_HOME   = 6   # BCM 6  — homing sensor SW2
-PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
+# PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
 PIN_STROBE       = 22  # BCM 22 — Strobe light
 PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
 PIN_DOOR_OPEN    = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
@@ -247,10 +247,10 @@ class HardwareInterface:
             GPIO.setmode(GPIO.BCM)
 
             # Motor outputs — safe initial states (Req 5.2, 5.6)
-            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=GPIO.LOW)   # driver disabled (active-HIGH)
+            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=GPIO.HIGH)  # driver disabled (active-LOW)
             GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
-            GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
+            # GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
             GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (assuming active-LOW like others)
 
             # Homing sensor — input with pull-up (LOW = home position reached)
@@ -258,7 +258,7 @@ class HardwareInterface:
 
             # Existing sensor/indicator pins
             GPIO.setup(PIN_BIN_FULL,     GPIO.IN,  pull_up_down=GPIO.PUD_UP)
-            GPIO.setup(PIN_DOOR_OPEN,    GPIO.IN,  pull_up_down=GPIO.PUD_UP)
+            GPIO.setup(PIN_DOOR_OPEN,    GPIO.IN,  pull_up_down=GPIO.PUD_DOWN)
 
             # Red Fault LED is wired ACTIVE-LOW (cathode → GPIO 27, anode → 3.3V).
             # HIGH = LED OFF, LOW = LED ON. Initial state: HIGH (OFF).
@@ -272,8 +272,8 @@ class HardwareInterface:
         if not self.gpio_available:
             return
         try:
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)   # disable driver (Req 5.7, active-HIGH)
-            GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)  # disable driver (Req 5.7)
+            # GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
             GPIO.output(PIN_STROBE,       GPIO.HIGH)  # strobe off (active-LOW)
             # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
             GPIO.output(PIN_FAULT_LED,    GPIO.HIGH)
@@ -374,24 +374,29 @@ class HardwareInterface:
         if not self.gpio_available:
             return False
         try:
-            return GPIO.input(PIN_DOOR_OPEN) == GPIO.LOW
+            return GPIO.input(PIN_DOOR_OPEN) == GPIO.HIGH
         except Exception:
             return False
 
     def check_door_safety(self, current_screen: str):
-        if self.is_door_open():
-            if current_screen == "READY":
-                self.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
-                self.log("MECH", "Safety door open detected. Suspending...")
-                while self.is_door_open():
-                    time.sleep(0.5)
-                self.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-                self.log("MECH", "Safety door closed. Resuming...")
-            else:
-                self.log("MECH", "Safety door open detected. Suspending session...")
-                while self.is_door_open():
-                    time.sleep(0.5)
-                self.log("MECH", "Safety door closed. Resuming session...")
+        pass
+        # if self.is_door_open():
+        #     if current_screen == "READY":
+        #         self.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
+        #         self.log("MECH", "Safety door open detected. Suspending...")
+        #         while self.is_door_open():
+        #             if not ui_bridge.clients:
+        #                 break
+        #             time.sleep(0.5)
+        #         self.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
+        #         self.log("MECH", "Safety door closed. Resuming...")
+        #     else:
+        #         self.log("MECH", "Safety door open detected. Suspending session...")
+        #         while self.is_door_open():
+        #             if not ui_bridge.clients:
+        #                 break
+        #             time.sleep(0.5)
+        #         self.log("MECH", "Safety door closed. Resuming session...")
 
     def display_ui(self, text, event=None, data=None):
         """Simulates sending text to the LCD screen and broadcasts to WebSocket."""
@@ -444,8 +449,8 @@ class HardwareInterface:
             return
 
         try:
-            # Enable motor (active-HIGH)
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
+            # Enable motor (active-LOW)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
             
             # Open Sequence
             self.log("MOTOR", "Opening dispenser...")
@@ -475,7 +480,7 @@ class HardwareInterface:
             self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
         finally:
             # Disable motor
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
 
     def _open_camera(self):
         """
@@ -662,11 +667,11 @@ def wait_for_action(ui_bridge, accepted_actions, timeout_seconds=300.0, hw=None,
     while time.monotonic() < deadline:
         if not ui_bridge.clients:
             return None
-        if hw and current_screen:
-            if hw.is_door_open():
-                pause_start = time.monotonic()
-                hw.check_door_safety(current_screen)
-                deadline += (time.monotonic() - pause_start)
+        # if hw and current_screen:
+        #     if hw.is_door_open():
+        #         pause_start = time.monotonic()
+        #         hw.check_door_safety(current_screen)
+        #         deadline += (time.monotonic() - pause_start)
         msg = ui_bridge.get_message(timeout=0.5)
         if msg is not None:
             action = msg.get("action")
@@ -883,8 +888,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         hw.set_scanner_power(False)
 
         if qr_flow_complete == "TIMEOUT":
-            if hw.gpio_available and GPIO:
-                GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
+            # if hw.gpio_available and GPIO:
+            #     GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
             continue
 
         # --- STATE: TRANSACTION LOOP ---
@@ -892,8 +897,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         physical_bottle_inserted = False  # Reset flag for transaction start
 
         current_screen = "READY"
-        if hw.gpio_available and GPIO:
-            GPIO.output(PIN_IN_PROGRESS, GPIO.LOW) # Turn ON indicator (active-LOW)
+        # if hw.gpio_available and GPIO:
+        #     GPIO.output(PIN_IN_PROGRESS, GPIO.LOW) # Turn ON indicator (active-LOW)
 
         while transacting:
             hw.check_door_safety(current_screen)
@@ -929,6 +934,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     hw.log("MECH", "Dispenser door opened by user!")
                     
                     while GPIO.input(PIN_MOTOR_HOME) == GPIO.HIGH:
+                        if not ui_bridge.clients:
+                            break
                         time.sleep(0.1)
                         
                     hw.display_ui("Door Closed. Processing...", "DOOR_CLOSED")
@@ -1125,8 +1132,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 hw.log("API_ERR", f"Failed to finalize session: {e}")
                 
         hw.log("SYS", "Session Finalized.")
-        if hw.gpio_available and GPIO:
-            GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
+        # if hw.gpio_available and GPIO:
+        #     GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
         hw.display_ui("Thank you for using EcoPoints.", "ADVANCE_THANK_YOU")
 
         # Reset session point trackers

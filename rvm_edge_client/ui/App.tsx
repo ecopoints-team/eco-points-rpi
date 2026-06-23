@@ -60,7 +60,7 @@ function KioskRouter() {
   return (
     <View style={{ flex: 1 }}>
       {ActiveScreen}
-      <LightIndicator />
+      {/* <LightIndicator /> */}
       {DEV_MODE && <DevPanel />}
     </View>
   );
