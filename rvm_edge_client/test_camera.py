@@ -18,7 +18,10 @@ def main():
     try:
         from picamera2 import Picamera2
         cam = Picamera2()
-        config = cam.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)})
+        config = cam.create_preview_configuration(
+            main={"format": "RGB888", "size": (640, 480)},
+            sensor={"output_size": cam.sensor_resolution}
+        )
         cam.configure(config)
         cam.start()
         use_picam2 = True

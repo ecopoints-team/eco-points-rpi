@@ -53,8 +53,17 @@ except ImportError:
 # --- CONFIGURATION (BCM Pin assignments matching README.md) ---
 PIN_MOTOR_PULSE  = 12  # BCM 12 — step pulse
 PIN_MOTOR_DIR    = 16  # BCM 16 — direction
-PIN_MOTOR_ENABLE = 17  # BCM 17 — driver enable, active-LOW
+PIN_MOTOR_ENABLE = 17  # BCM 17 — driver enable (polarity configurable)
 PIN_MOTOR_HOME   = 6   # BCM 6  — homing sensor SW2
+
+# Motor enable polarity setup. Default is active-LOW (inverted).
+MOTOR_ENABLE_INVERTED = os.getenv("MOTOR_ENABLE_INVERTED", "true").lower() == "true"
+if GPIO:
+    MOTOR_ENABLE_ACTIVE = GPIO.LOW if MOTOR_ENABLE_INVERTED else GPIO.HIGH
+    MOTOR_ENABLE_DISABLE = GPIO.HIGH if MOTOR_ENABLE_INVERTED else GPIO.LOW
+else:
+    MOTOR_ENABLE_ACTIVE = 0
+    MOTOR_ENABLE_DISABLE = 1
 # PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
 PIN_STROBE       = 22  # BCM 22 — Strobe light
 PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
@@ -247,7 +256,7 @@ class HardwareInterface:
             GPIO.setmode(GPIO.BCM)
 
             # Motor outputs — safe initial states (Req 5.2, 5.6)
-            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=GPIO.HIGH)  # driver disabled (active-LOW)
+            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=MOTOR_ENABLE_DISABLE)
             GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
             # GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
@@ -272,7 +281,7 @@ class HardwareInterface:
         if not self.gpio_available:
             return
         try:
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)  # disable driver (Req 5.7)
+            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)   # disable driver (Req 5.7)
             # GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
             GPIO.output(PIN_STROBE,       GPIO.HIGH)  # strobe off (active-LOW)
             # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
@@ -449,8 +458,8 @@ class HardwareInterface:
             return
 
         try:
-            # Enable motor (active-LOW)
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
+            # Enable motor
+            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_ACTIVE)
             
             # Open Sequence
             self.log("MOTOR", "Opening dispenser...")
@@ -480,7 +489,7 @@ class HardwareInterface:
             self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
         finally:
             # Disable motor
-            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
+            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
 
     def _open_camera(self):
         """
@@ -492,7 +501,8 @@ class HardwareInterface:
             try:
                 cam = Picamera2()
                 config = cam.create_preview_configuration(
-                    main={"format": "RGB888", "size": (640, 480)}
+                    main={"format": "RGB888", "size": (640, 480)},
+                    sensor={"output_size": cam.sensor_resolution}
                 )
                 cam.configure(config)
                 cam.start()
