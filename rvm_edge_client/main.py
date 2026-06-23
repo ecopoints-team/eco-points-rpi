@@ -412,13 +412,16 @@ class HardwareInterface:
         except Exception as e:
             self.log("USB_ERR", f"Failed to run uhubctl: {e}")
 
-    def spin_motor(self, steps: int = 1250) -> None:
+    def spin_motor(self) -> None:
         """
         Drives stepper motor to open dispenser, waits, then homes it.
-        Sets DIR HIGH (forward), pulses for 1250 steps.
+        Sets DIR HIGH (forward), pulses for MOTOR_OPEN_STEPS.
         Then sets DIR LOW (backward), pulses until homing sensor triggers.
         """
-        self.log("MOTOR", "Activating sorting actuator/conveyor...")
+        # Load steps from environment to allow easy tuning without code changes (default: 1000, which is safer than 1250)
+        steps = int(os.getenv("MOTOR_OPEN_STEPS", "1000"))
+        
+        self.log("MOTOR", f"Activating sorting actuator/conveyor ({steps} steps)...")
         if not self.gpio_available:
             time.sleep(1.2)
             self.log("MOTOR", "[SIMULATION] Sorting complete.")
