@@ -671,7 +671,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             timeout=10,
         )
         if identify_resp.status_code in (200, 201):
-            org_id = identify_resp.json().get("organizationId")
+            org_id = identify_resp.json().get("machine", {}).get("organizationId")
             hw.log("NET", f"Machine identified. org_id={org_id}")
         else:
             hw.log("NET", f"Identify returned HTTP {identify_resp.status_code}. org_id unknown; using default points.")
