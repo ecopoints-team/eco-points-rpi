@@ -26,7 +26,6 @@ export default function VerifyingScreen() {
     );
 
     // TEMPORARILY DISABLED TO MAKE VIEWABLE
-    /*
     if (DEV_MODE) {
       getVerificationResult().then((res) => {
         if (res.accepted) {
@@ -42,7 +41,6 @@ export default function VerifyingScreen() {
         }
       });
     }
-    */
   }, []);
 
   const spinStyle = useAnimatedStyle(() => ({

@@ -412,40 +412,51 @@ class HardwareInterface:
         except Exception as e:
             self.log("USB_ERR", f"Failed to run uhubctl: {e}")
 
-    def spin_motor(self, steps: int = 200) -> None:
+    def spin_motor(self, steps: int = 1250) -> None:
         """
-        Drives stepper motor for `steps` pulses (Req 5.3, 5.4, 5.5).
-        Sets DIR HIGH (forward), enables driver (ENABLE LOW, active-LOW),
-        turns on IN_PROGRESS indicator (LOW, active-LOW) and STROBE (HIGH).
-        Pulses MOTOR_PULSE: HIGH 0.5 ms → LOW 0.5 ms, stopping early if
-        homing sensor (PIN_MOTOR_HOME) reads LOW.
-        Finally: disables driver (ENABLE HIGH), turns off indicator/strobe.
-        Simulation fallback (GPIO unavailable): time.sleep(steps * 0.001).
+        Drives stepper motor to open dispenser, waits, then homes it.
+        Sets DIR HIGH (forward), pulses for 1250 steps.
+        Then sets DIR LOW (backward), pulses until homing sensor triggers.
         """
         self.log("MOTOR", "Activating sorting actuator/conveyor...")
-        if self.gpio_available:
-            try:
-                GPIO.output(PIN_MOTOR_DIR,    GPIO.HIGH)  # forward direction
-                GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)   # enable driver (active-LOW)
-                GPIO.output(PIN_IN_PROGRESS,  GPIO.LOW)   # turn on indicator (active-LOW)
-                GPIO.output(PIN_STROBE,       GPIO.HIGH)  # turn on strobe
-                for _ in range(steps):
-                    if GPIO.input(PIN_MOTOR_HOME) == GPIO.LOW:
-                        self.log("MOTOR", "Homing sensor triggered. Stopping early.")
-                        break
-                    GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
-                    time.sleep(0.0005)  # 0.5 ms HIGH
-                    GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
-                    time.sleep(0.0005)  # 0.5 ms LOW
-            except Exception as e:
-                self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
-            finally:
-                GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)  # disable driver (Req 5.7)
-                GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off
-                GPIO.output(PIN_STROBE,       GPIO.LOW)   # strobe off
-        else:
-            time.sleep(steps * 0.001)  # simulation fallback (Req 5.5)
-        self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
+        if not self.gpio_available:
+            time.sleep(1.2)
+            self.log("MOTOR", "[SIMULATION] Sorting complete.")
+            return
+
+        try:
+            # Enable motor (active-LOW)
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
+            
+            # Open Sequence
+            self.log("MOTOR", "Opening dispenser...")
+            GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
+            for _ in range(steps):
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+                time.sleep(0.001)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+                time.sleep(0.001)
+            
+            time.sleep(0.5) # Wait for bottle to drop
+            
+            # Close Sequence (Home)
+            self.log("MOTOR", "Homing dispenser...")
+            GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
+            
+            timeout = time.time() + 10.0
+            # Assuming home sensor is pulled up and shorts to ground (LOW) when closed
+            while GPIO.input(PIN_MOTOR_HOME) != GPIO.LOW and time.time() < timeout:
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+                time.sleep(0.001)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+                time.sleep(0.001)
+                
+            self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
+        except Exception as e:
+            self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
+        finally:
+            # Disable motor
+            GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
 
     def _open_camera(self):
         """
@@ -736,6 +747,9 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         hw.log("NET", "Ping sent to wake backend server...")
 
         # --- STATE: QR SCANNING ---
+        if hw.gpio_available:
+            GPIO.output(PIN_IN_PROGRESS, GPIO.LOW) # Turn ON indicator (active-LOW)
+            
         hw.set_scanner_power(True)
         time.sleep(1.5)  # Give USB scanner time to boot
         
@@ -848,6 +862,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         hw.set_scanner_power(False)
 
         if qr_flow_complete == "TIMEOUT":
+            if hw.gpio_available:
+                GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
             continue
 
         # --- STATE: TRANSACTION LOOP ---
@@ -965,7 +981,11 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             hw.spin_motor()  # default steps=200
             
             # Execute CV classification
+            if hw.gpio_available:
+                GPIO.output(PIN_STROBE, GPIO.HIGH)
             is_valid, brand_name, size_category, confidence = hw.verify_bottle()
+            if hw.gpio_available:
+                GPIO.output(PIN_STROBE, GPIO.LOW)
             
             if not is_valid:
                 hw.log("ERR", "Object Classification: INVALID/FOREIGN OBJECT")
@@ -1072,6 +1092,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 hw.log("API_ERR", f"Failed to finalize session: {e}")
                 
         hw.log("SYS", "Session Finalized.")
+        if hw.gpio_available:
+            GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
         hw.display_ui("Thank you for using EcoPoints.", "ADVANCE_THANK_YOU")
 
         # Reset session point trackers
