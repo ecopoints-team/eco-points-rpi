@@ -34,18 +34,7 @@ export default function ReadyScreen() {
 
       {/* Main user actions */}
       <View style={styles.actionsContainer}>
-        <GlowButton
-          label="Manual: Bottle Inserted & Door Closed"
-          variant="primary"
-          onPress={() => {
-            dispatch({ type: 'BOTTLE_INSERTED' });
-            if (!DEV_MODE) {
-              sendGPIOEvent({ action: 'BOTTLE_INSERTED' });
-            }
-          }}
-          style={[styles.btn, { minWidth: scale(400) }]}
-        />
-        
+        {/* Hardware GPIO handles bottle insertion now */}
         <GlowButton
           label="Cancel"
           variant="outline"

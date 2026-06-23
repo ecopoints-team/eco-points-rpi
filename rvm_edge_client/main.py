@@ -904,14 +904,19 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     user_inserted = False
                     break
                 
-                # Check for live door openings
-                if hw.is_door_open():
-                    hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
-                    hw.log("MECH", "Door opened during active session!")
-                    while hw.is_door_open():
-                        time.sleep(0.5)
-                    hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-                    hw.display_ui("Please insert bottles in place", "READY")
+                # Check for live door openings via Homing Sensor (Dispenser Door)
+                # HIGH = off home position = door open
+                if hw.gpio_available and GPIO.input(PIN_MOTOR_HOME) == GPIO.HIGH:
+                    hw.display_ui("Door Open. Please insert bottle.", "SET_DOOR_OPEN")
+                    hw.log("MECH", "Dispenser door opened by user!")
+                    
+                    while GPIO.input(PIN_MOTOR_HOME) == GPIO.HIGH:
+                        time.sleep(0.1)
+                        
+                    hw.display_ui("Door Closed. Processing...", "DOOR_CLOSED")
+                    hw.log("SYS", "Dispenser door closed. Proceeding to verification.")
+                    user_inserted = True
+                    break
                 
                 # Check for physical hardware sensor interrupt
                 if physical_bottle_inserted:
