@@ -143,7 +143,7 @@ def _inject_messages(delay_before_each=0.05):
 # Patched wait_for_action: same logic but default timeout = SHORT_TIMEOUT
 # ---------------------------------------------------------------------------
 
-def _short_wait_for_action(ui_bridge_arg, accepted_actions, timeout_seconds=SHORT_TIMEOUT):
+def _short_wait_for_action(ui_bridge_arg, accepted_actions, timeout_seconds=SHORT_TIMEOUT, *args, **kwargs):
     """
     Drop-in replacement for main.wait_for_action with a SHORT_TIMEOUT default.
     Preserves all original semantics (monotonic deadline, 0.5 s poll).
