@@ -34,6 +34,7 @@ try:
     # Allow overriding GPIO availability via .env if hardware is missing
     GPIO_AVAILABLE = os.getenv("DISABLE_GPIO", "false").lower() != "true"
 except ImportError:
+    GPIO = None
     GPIO_AVAILABLE = False
 
 try:
@@ -377,6 +378,21 @@ class HardwareInterface:
         except Exception:
             return False
 
+    def check_door_safety(self, current_screen: str):
+        if self.is_door_open():
+            if current_screen == "READY":
+                self.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
+                self.log("MECH", "Safety door open detected. Suspending...")
+                while self.is_door_open():
+                    time.sleep(0.5)
+                self.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
+                self.log("MECH", "Safety door closed. Resuming...")
+            else:
+                self.log("MECH", "Safety door open detected. Suspending session...")
+                while self.is_door_open():
+                    time.sleep(0.5)
+                self.log("MECH", "Safety door closed. Resuming session...")
+
     def display_ui(self, text, event=None, data=None):
         """Simulates sending text to the LCD screen and broadcasts to WebSocket."""
         print(f"\n[LCD DISPLAY] >> \"{text}\"\n")
@@ -634,7 +650,7 @@ def start_heartbeat_thread(hw):
 
 # --- SESSION HELPERS ---
 
-def wait_for_action(ui_bridge, accepted_actions, timeout_seconds=300.0):
+def wait_for_action(ui_bridge, accepted_actions, timeout_seconds=300.0, hw=None, current_screen=None):
     """
     Polls ui_bridge for a message matching one of the accepted_actions.
 
@@ -646,6 +662,11 @@ def wait_for_action(ui_bridge, accepted_actions, timeout_seconds=300.0):
     while time.monotonic() < deadline:
         if not ui_bridge.clients:
             return None
+        if hw and current_screen:
+            if hw.is_door_open():
+                pause_start = time.monotonic()
+                hw.check_door_safety(current_screen)
+                deadline += (time.monotonic() - pause_start)
         msg = ui_bridge.get_message(timeout=0.5)
         if msg is not None:
             action = msg.get("action")
@@ -750,9 +771,6 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         hw.log("NET", "Ping sent to wake backend server...")
 
         # --- STATE: QR SCANNING ---
-        if hw.gpio_available:
-            GPIO.output(PIN_IN_PROGRESS, GPIO.LOW) # Turn ON indicator (active-LOW)
-            
         hw.set_scanner_power(True)
         time.sleep(1.5)  # Give USB scanner time to boot
         
@@ -865,7 +883,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         hw.set_scanner_power(False)
 
         if qr_flow_complete == "TIMEOUT":
-            if hw.gpio_available:
+            if hw.gpio_available and GPIO:
                 GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
             continue
 
@@ -873,17 +891,14 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         transacting = True
         physical_bottle_inserted = False  # Reset flag for transaction start
 
+        current_screen = "READY"
+        if hw.gpio_available and GPIO:
+            GPIO.output(PIN_IN_PROGRESS, GPIO.LOW) # Turn ON indicator (active-LOW)
+
         while transacting:
+            hw.check_door_safety(current_screen)
             hw.display_ui("Please insert bottles in place", "READY")
-            
-            # Verify safety door is closed before opening actuator
-            if hw.is_door_open():
-                hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
-                hw.log("MECH", "Safety door open detected. Suspending...")
-                while hw.is_door_open():
-                    time.sleep(0.5)
-                hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-                hw.log("MECH", "Safety door closed. Resuming...")
+            current_screen = "READY"
 
             hw.log("MECH", "Unlocking Safety Door...")
             hw.log("MECH", "Door Unlocked.")
@@ -904,14 +919,22 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     user_inserted = False
                     break
                 
-                # Check for live door openings
-                if hw.is_door_open():
-                    hw.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
-                    hw.log("MECH", "Door opened during active session!")
-                    while hw.is_door_open():
-                        time.sleep(0.5)
-                    hw.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-                    hw.display_ui("Please insert bottles in place", "READY")
+                # Check for safety door status
+                hw.check_door_safety(current_screen)
+                
+                # Check for live door openings via Homing Sensor (Dispenser Door)
+                # HIGH = off home position = door open
+                if hw.gpio_available and GPIO and GPIO.input(PIN_MOTOR_HOME) == GPIO.HIGH:
+                    hw.display_ui("Door Open. Please insert bottle.", "SET_DOOR_OPEN")
+                    hw.log("MECH", "Dispenser door opened by user!")
+                    
+                    while GPIO.input(PIN_MOTOR_HOME) == GPIO.HIGH:
+                        time.sleep(0.1)
+                        
+                    hw.display_ui("Door Closed. Processing...", "DOOR_CLOSED")
+                    hw.log("SYS", "Dispenser door closed. Proceeding to verification.")
+                    user_inserted = True
+                    break
                 
                 # Check for physical hardware sensor interrupt
                 if physical_bottle_inserted:
@@ -976,6 +999,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 
             # Transition screen to verifying
             hw.display_ui("Processing...", "BOTTLE_INSERTED")
+            current_screen = "VERIFYING"
+            hw.check_door_safety(current_screen)
             hw.log("MECH", "Locking Safety Door...")
             hw.log("SCALE", "Taring scale...")
             hw.log("PROC", "Analyzing object in chute...")
@@ -984,10 +1009,10 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             hw.spin_motor()  # default steps=200
             
             # Execute CV classification
-            if hw.gpio_available:
+            if hw.gpio_available and GPIO:
                 GPIO.output(PIN_STROBE, GPIO.LOW) # Turn ON
             is_valid, brand_name, size_category, confidence = hw.verify_bottle()
-            if hw.gpio_available:
+            if hw.gpio_available and GPIO:
                 GPIO.output(PIN_STROBE, GPIO.HIGH) # Turn OFF
             
             if not is_valid:
@@ -995,11 +1020,13 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 hw.display_ui("Transaction Denied: Invalid Item Detected", "VERIFY_FAIL", {
                     "reason": "Non-recyclable material or unrecognized bottle brand."
                 })
+                current_screen = "REJECTED"
+                hw.check_door_safety(current_screen)
                 hw.log("MECH", "Unlocking door for removal...")
                 
                 # Wait for user to decide to try again or finish (Req 4.1, 4.2, 4.3, 4.6)
                 hw.log("SYS", "Waiting for user action on rejection screen...")
-                action = wait_for_action(ui_bridge, ["REPEAT_READY", "FINISH", "CANCEL"])
+                action = wait_for_action(ui_bridge, ["REPEAT_READY", "FINISH", "CANCEL"], hw=hw, current_screen=current_screen)
                 if action is None:
                     # Timeout path (Req 4.2, 4.3, 4.6)
                     hw.log("SYS", "Session timed out on rejection screen.")
@@ -1052,10 +1079,12 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     "bottleCount": 1
                 })
                 hw.display_ui(f"Your Total Points : {user_total_points} pts")
+                current_screen = "ACCEPTED"
+                hw.check_door_safety(current_screen)
                 
                 # Wait for user choice (another bottle or finish) (Req 4.1, 4.2, 4.3, 4.6)
                 hw.log("SYS", "Waiting for user action (Repeat/Finish)...")
-                action = wait_for_action(ui_bridge, ["REPEAT_READY", "FINISH"])
+                action = wait_for_action(ui_bridge, ["REPEAT_READY", "FINISH"], hw=hw, current_screen=current_screen)
                 if action is None:
                     # Timeout path (Req 4.2, 4.3, 4.6)
                     hw.log("SYS", "Session timed out on acceptance screen.")
@@ -1074,6 +1103,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
 
                 if action == "REPEAT_READY":
                     hw.log("SYS", "User selected transact again. Looping...")
+                    current_screen = "READY"
                     continue
                 else:
                     transacting = False
@@ -1095,7 +1125,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 hw.log("API_ERR", f"Failed to finalize session: {e}")
                 
         hw.log("SYS", "Session Finalized.")
-        if hw.gpio_available:
+        if hw.gpio_available and GPIO:
             GPIO.output(PIN_IN_PROGRESS, GPIO.HIGH) # Turn OFF indicator
         hw.display_ui("Thank you for using EcoPoints.", "ADVANCE_THANK_YOU")
 
