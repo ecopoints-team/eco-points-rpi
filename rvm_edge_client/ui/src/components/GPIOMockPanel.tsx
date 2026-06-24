@@ -23,7 +23,7 @@ export default function GPIOMockPanel() {
 
   // Mock states for the inputs that don't go directly to Kiosk context
   const [homingSensor, setHomingSensor] = useState(true); // true = raised
-  const [pulseSteps, setPulseSteps] = useState('1250');
+  const [pulseSteps, setPulseSteps] = useState('1000');
   const [pulseDirection, setPulseDirection] = useState('1'); // 1 = forward (raise), 0 = backward (drop)
 
   // Animated platform representation
@@ -64,8 +64,6 @@ export default function GPIOMockPanel() {
   // Listen to screen changes to automatically drop and raise the platform on successful verification
   useEffect(() => {
     if (screen === 'ACCEPTED' && previousScreen.current === 'VERIFYING') {
-      // Initiate DIR to drop
-      setPulseDirection('0');
       // Drop the platform (go to 0 deg, vertical)
       platformAngle.value = withTiming(0, {
         duration: 1000,
@@ -74,9 +72,8 @@ export default function GPIOMockPanel() {
       setTimeout(() => {
         setHomingSensor(false); // false = dropped
         
-        // Briefly stay dropped, then initiate DIR to raise the platform again
+        // Briefly stay dropped, then raise the platform again
         setTimeout(() => {
-          setPulseDirection('1');
           platformAngle.value = withTiming(-90, {
             duration: 1000,
             easing: Easing.inOut(Easing.ease),
@@ -85,6 +82,15 @@ export default function GPIOMockPanel() {
             setHomingSensor(true); // true = raised
           }, 1000);
         }, 1500);
+      }, 1000);
+    } else if (screen === 'READY' || screen === 'START') {
+      // Ensure the platform is raised for the next session/bottle (go to -90 deg, horizontal)
+      platformAngle.value = withTiming(-90, {
+        duration: 1000,
+        easing: Easing.inOut(Easing.ease),
+      });
+      setTimeout(() => {
+        setHomingSensor(true); // true = raised
       }, 1000);
     }
     previousScreen.current = screen;
@@ -123,7 +129,6 @@ export default function GPIOMockPanel() {
         <Indicator label="GPIO 27 - Fault (Red)" isOn={isFaultOn} color="#ef4444" />
         <Indicator label="GPIO 26 - In Progress (Orange)" isOn={isInProgressOn} color="#f97316" />
         <Indicator label="GPIO 22 - Strobe (White)" isOn={isStrobeOn} color="#ffffff" />
-        <Indicator label="GPIO 12 - Pulse Motor (Always HIGH)" isOn={true} color="#10b981" />
       </View>
 
       {/* Inputs Section */}
@@ -169,7 +174,7 @@ export default function GPIOMockPanel() {
           />
         </View>
         <TouchableOpacity style={styles.primaryButton} onPress={handlePulseMotor}>
-          <Text style={styles.primaryButtonText}>Initiate DIR</Text>
+          <Text style={styles.primaryButtonText}>Simulate PULSE</Text>
         </TouchableOpacity>
         
         {/* Visual Platform Representation */}

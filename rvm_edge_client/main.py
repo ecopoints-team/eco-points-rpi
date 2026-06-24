@@ -215,7 +215,7 @@ class HardwareInterface:
 
             # Motor outputs — safe initial states (Req 5.2, 5.6)
             GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=MOTOR_ENABLE_DISABLE)
-            GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.HIGH)
+            GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
             # GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
             GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (assuming active-LOW like others)
@@ -406,8 +406,8 @@ class HardwareInterface:
         Sets DIR HIGH (forward), pulses for MOTOR_OPEN_STEPS.
         Then sets DIR LOW (backward), pulses until homing sensor triggers.
         """
-        # Load steps from environment to allow easy tuning without code changes (default: 1250)
-        steps = int(os.getenv("MOTOR_OPEN_STEPS", "1250"))
+        # Load steps from environment to allow easy tuning without code changes (default: 1000, which is safer than 1250)
+        steps = int(os.getenv("MOTOR_OPEN_STEPS", "1000"))
         
         self.log("MOTOR", f"Activating sorting actuator/conveyor ({steps} steps)...")
         if not self.gpio_available:
@@ -423,9 +423,9 @@ class HardwareInterface:
             self.log("MOTOR", "Opening dispenser...")
             GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
             for _ in range(steps):
-                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
-                time.sleep(0.001)
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+                time.sleep(0.001)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
                 time.sleep(0.001)
             
             time.sleep(0.5) # Wait for bottle to drop
@@ -437,9 +437,9 @@ class HardwareInterface:
             timeout = time.time() + 10.0
             # Assuming home sensor is pulled up and shorts to ground (LOW) when closed
             while GPIO.input(PIN_MOTOR_HOME) != GPIO.LOW and time.time() < timeout:
-                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
-                time.sleep(0.001)
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+                time.sleep(0.001)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
                 time.sleep(0.001)
                 
             self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
