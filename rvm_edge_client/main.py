@@ -70,49 +70,7 @@ PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29
 PIN_DOOR_OPEN    = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
 
 # --- POINTS CONFIGURATION ---
-# Fallback points lookup used when the backend config fetch fails (Req 3.3, 3.4).
-# Covers every size token that verify_bottle() can return.
-POINTS_DEFAULT: dict[str, int] = {
-    "extra small": 3, "xs": 3,
-    "small": 5, "s": 5,
-    "medium": 8, "m": 8,
-    "large": 10, "l": 10,
-    "1000ml": 10, "750ml": 10, "551ml": 10,
-    "600ml": 8, "550ml": 8, "500ml": 8, "351ml": 8,
-    "350ml": 5, "330ml": 5, "290ml": 5,
-    "289ml": 3, "250ml": 3, "125ml": 3,
-}
-
-
-def fetch_points_config(
-    backend_url: str,
-    org_id: int,
-    api_key: str,
-    fallback: dict[str, int],
-) -> dict[str, int]:
-    """
-    GET /api/rpi/config/points/<org_id> with a 10 s timeout.
-
-    Returns response["config"] dict on HTTP 200 + "config" key present.
-    Returns fallback on any error (network, timeout, non-200, missing key).
-    Logs a warning on failure.
-    """
-    try:
-        response = requests.get(
-            f"{backend_url}/api/rpi/config/points/{org_id}",
-            headers={"X-API-Key": api_key},
-            timeout=10,
-        )
-        if response.status_code == 200:
-            data = response.json()
-            if "config" in data:
-                return data["config"]
-            print(f"[{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [NET     ] : Points config response missing 'config' key. Using defaults.")
-        else:
-            print(f"[{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [NET     ] : Points config fetch failed: HTTP {response.status_code}. Using defaults.")
-    except Exception as e:
-        print(f"[{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [NET     ] : Points config fetch failed: {e}. Using defaults.")
-    return fallback
+# (Using local size mapping logic)
 
 # Light Indicators
 PIN_FAULT_LED    = 27  # Red LED (BCM 27) — active-LOW (LOW=ON, HIGH=OFF)
@@ -697,24 +655,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
     hw.boot_sequence()
     start_heartbeat_thread(hw)
 
-    # --- IDENTIFY: obtain org_id for points config fetch ---
-    org_id = None
-    try:
-        identify_resp = requests.post(
-            f"{BACKEND_URL}/api/rpi/machine/identify",
-            headers={"X-API-Key": API_KEY},
-            json={"machineUuid": MACHINE_ID},
-            timeout=10,
-        )
-        if identify_resp.status_code in (200, 201):
-            org_id = identify_resp.json().get("machine", {}).get("organizationId")
-            hw.log("NET", f"Machine identified. org_id={org_id}")
-        else:
-            hw.log("NET", f"Identify returned HTTP {identify_resp.status_code}. org_id unknown; using default points.")
-    except Exception as _exc:
-        hw.log("NET", f"Identify call failed: {_exc}. Using default points config.")
-
-    points_config = fetch_points_config(BACKEND_URL, org_id, API_KEY, fallback=POINTS_DEFAULT)
+    # --- IDENTIFY: Skip cloud identify for local point system ---
 
     user_total_points = 0
 
@@ -1068,10 +1009,35 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 # Spin conveyor motor to drop the bottle after successful verification
                 hw.spin_motor()
                 
-                # Map size token to points via fetched config (falls back to POINTS_DEFAULT)
-                best_class = f"{brand_name} {size_category}"
-                size_token = best_class.split()[-1].lower() if best_class else ""
-                points = points_config.get(size_token, POINTS_DEFAULT.get(size_token, 5))
+                # Map sizes to points values
+                points = 10
+                cls_lower = f"{brand_name} {size_category}".lower()
+                
+                if "extra small" in cls_lower or "xs" in cls_lower.split():
+                    points = 3
+                    size_category = "Extra Small"
+                elif "small" in cls_lower or "s" in cls_lower.split():
+                    points = 5
+                    size_category = "Small"
+                elif "medium" in cls_lower or "m" in cls_lower.split():
+                    points = 8
+                    size_category = "Medium"
+                elif "large" in cls_lower or "l" in cls_lower.split():
+                    points = 12
+                    size_category = "Large"
+                else:
+                    if "1000ml" in cls_lower or "750ml" in cls_lower or "600ml" in cls_lower or "551ml" in cls_lower:
+                        points = 12
+                        size_category = "Large"
+                    elif "500ml" in cls_lower or "550ml" in cls_lower or "351ml" in cls_lower:
+                        points = 8
+                        size_category = "Medium"
+                    elif "350ml" in cls_lower or "330ml" in cls_lower or "290ml" in cls_lower:
+                        points = 5
+                        size_category = "Small"
+                    elif "289ml" in cls_lower or "250ml" in cls_lower or "125ml" in cls_lower:
+                        points = 3
+                        size_category = "Extra Small"
 
                 user_total_points += points
                 
