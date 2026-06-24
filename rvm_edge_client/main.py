@@ -215,7 +215,7 @@ class HardwareInterface:
 
             # Motor outputs — safe initial states (Req 5.2, 5.6)
             GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=MOTOR_ENABLE_DISABLE)
-            GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
+            GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.HIGH)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
             # GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
             GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (assuming active-LOW like others)
@@ -406,8 +406,8 @@ class HardwareInterface:
         Sets DIR HIGH (forward), pulses for MOTOR_OPEN_STEPS.
         Then sets DIR LOW (backward), pulses until homing sensor triggers.
         """
-        # Load steps from environment to allow easy tuning without code changes (default: 1000, which is safer than 1250)
-        steps = int(os.getenv("MOTOR_OPEN_STEPS", "1000"))
+        # Load steps from environment to allow easy tuning without code changes (default: 1250)
+        steps = int(os.getenv("MOTOR_OPEN_STEPS", "1250"))
         
         self.log("MOTOR", f"Activating sorting actuator/conveyor ({steps} steps)...")
         if not self.gpio_available:
@@ -423,9 +423,9 @@ class HardwareInterface:
             self.log("MOTOR", "Opening dispenser...")
             GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
             for _ in range(steps):
-                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
-                time.sleep(0.001)
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+                time.sleep(0.001)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
                 time.sleep(0.001)
             
             time.sleep(0.5) # Wait for bottle to drop
@@ -437,9 +437,9 @@ class HardwareInterface:
             timeout = time.time() + 10.0
             # Assuming home sensor is pulled up and shorts to ground (LOW) when closed
             while GPIO.input(PIN_MOTOR_HOME) != GPIO.LOW and time.time() < timeout:
-                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
-                time.sleep(0.001)
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+                time.sleep(0.001)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
                 time.sleep(0.001)
                 
             self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
@@ -859,15 +859,8 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             hw.log("MECH", "Unlocking Safety Door...")
             hw.log("MECH", "Door Unlocked.")
 
-            hw.log("SYS", "Waiting for bottle insertion (Camera Auto-Detection, Hardware Sensor, or UI Simulator)...")
+            hw.log("SYS", "Waiting for bottle insertion (Hardware Sensor or UI Simulator)...")
             user_inserted = False
-            
-            # Start camera for auto-detection
-            cap = None
-            consecutive_detections = 0
-            if hw.cv_available and hw.model:
-                hw.log("CAM", "Starting camera module for auto-detection...")
-                cap = hw._open_camera()
             
             while True:
                 if not ui_bridge.clients:
@@ -901,39 +894,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                     user_inserted = True
                     break
                 
-                # Check Camera feed for bottle detection
-                if cap and cap.isOpened():
-                    ret, frame = cap.read()
-                    if ret:
-                        # Camera is mounted upside down, rotate it 180 degrees
-                        frame = cv2.rotate(frame, cv2.ROTATE_180)
-                        
-                        if SHOW_CV_WINDOW:
-                            cv2.imshow("RVM Camera Feed - Waiting for Bottle", frame)
-                            cv2.waitKey(1)
-                        
-                        detected_in_frame = False
-                        results = hw.model.predict(frame, conf=0.6, verbose=False)
-                        for result in results:
-                            if len(result.boxes) > 0:
-                                detected_in_frame = True
-                                break
-                                
-                        if detected_in_frame:
-                            consecutive_detections += 1
-                            if consecutive_detections >= 4:
-                                cls_id = int(results[0].boxes[0].cls[0])
-                                class_name = hw.model.names[cls_id]
-                                hw.log("CV", f"Auto-detected {class_name} consistently! Triggering insertion.")
-                                user_inserted = True
-                                break
-                        else:
-                            consecutive_detections = 0
-                
-                if user_inserted:
-                    break
-                
-                # Very short timeout so the camera read isn't blocked
+                # Very short timeout
                 msg = ui_bridge.get_message(timeout=0.01)
                 if msg:
                     if msg.get("action") == "CANCEL":
@@ -943,12 +904,6 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                         hw.log("SYS", "Bottle insertion triggered via UI simulation button.")
                         user_inserted = True
                         break
-            
-            # Release camera so verify_bottle can safely reopen it
-            if cap:
-                cap.release()
-                cv2.destroyAllWindows()
-                time.sleep(0.5)  # Give OS time to free the camera resource
             
             if not user_inserted:
                 hw.log("SYS", "Transaction finished or canceled by user.")
