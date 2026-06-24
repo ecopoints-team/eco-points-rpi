@@ -23,7 +23,7 @@ export default function GPIOMockPanel() {
 
   // Mock states for the inputs that don't go directly to Kiosk context
   const [homingSensor, setHomingSensor] = useState(true); // true = raised
-  const [pulseSteps, setPulseSteps] = useState('1000');
+  const [pulseSteps, setPulseSteps] = useState('1250');
   const [pulseDirection, setPulseDirection] = useState('1'); // 1 = forward (raise), 0 = backward (drop)
 
   // Animated platform representation

@@ -406,8 +406,8 @@ class HardwareInterface:
         Sets DIR HIGH (forward), pulses for MOTOR_OPEN_STEPS.
         Then sets DIR LOW (backward), pulses until homing sensor triggers.
         """
-        # Load steps from environment to allow easy tuning without code changes (default: 1000, which is safer than 1250)
-        steps = int(os.getenv("MOTOR_OPEN_STEPS", "1000"))
+        # Load steps from environment to allow easy tuning without code changes (default: 1250)
+        steps = int(os.getenv("MOTOR_OPEN_STEPS", "1250"))
         
         self.log("MOTOR", f"Activating sorting actuator/conveyor ({steps} steps)...")
         if not self.gpio_available:
