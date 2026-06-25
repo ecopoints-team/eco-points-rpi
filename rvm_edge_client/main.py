@@ -230,6 +230,7 @@ class HardwareInterface:
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
             GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (active-LOW)
+            GPIO.setup(PIN_DOOR_LOCK,    GPIO.OUT, initial=GPIO.HIGH)  # lock output (HIGH = Locked)
 
             # Homing sensor — input with pull-up (LOW = home position reached)
             GPIO.setup(PIN_MOTOR_HOME,   GPIO.IN,  pull_up_down=GPIO.PUD_UP)
@@ -253,6 +254,7 @@ class HardwareInterface:
             GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)   # disable driver (Req 5.7)
             GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
             GPIO.output(PIN_STROBE,       GPIO.HIGH)  # strobe off (active-LOW)
+            GPIO.output(PIN_DOOR_LOCK,    GPIO.LOW)   # release door lock (Unlock) on shutdown
             # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
             GPIO.output(PIN_FAULT_LED,    GPIO.HIGH)
         except Exception:
@@ -352,10 +354,16 @@ class HardwareInterface:
         if not self.gpio_available:
             return False
         try:
-            # PUD_UP is used, so LOW = Triggered (Door Open)
-            return GPIO.input(PIN_DOOR_OPEN) == GPIO.LOW
+            # PUD_UP is used. Switch pressed (door closed) = LOW. Switch released (door open) = HIGH.
+            return GPIO.input(PIN_DOOR_OPEN) == GPIO.HIGH
         except Exception:
             return False
+
+    def set_door_lock(self, locked: bool):
+        """Engages or releases the physical door lock. HIGH = Locked, LOW = Unlocked."""
+        if not self.gpio_available:
+            return
+        GPIO.output(PIN_DOOR_LOCK, GPIO.HIGH if locked else GPIO.LOW)
 
     def check_door_safety(self, current_screen: str):
         pass
@@ -586,6 +594,21 @@ class HardwareInterface:
         try:
             # Read up to 10 frames to ensure we are sure it's a bottle
             for _ in range(10):
+                # Pause verification if the door is opened!
+                if self.is_door_open():
+                    self.log("CV", "Door opened during verification! Pausing...")
+                    self.display_ui("Door Open. Please close the door.", "SET_DOOR_OPEN")
+                    if self.gpio_available and GPIO:
+                        GPIO.output(PIN_STROBE, GPIO.HIGH) # Turn OFF strobe
+                    
+                    while self.is_door_open():
+                        time.sleep(0.5)
+                        
+                    self.log("CV", "Door closed. Resuming verification...")
+                    self.display_ui("Processing...", "DOOR_CLOSED")
+                    if self.gpio_available and GPIO:
+                        GPIO.output(PIN_STROBE, GPIO.LOW) # Turn ON strobe
+                        
                 ret, frame = cap.read()
                 if not ret:
                     continue
@@ -746,6 +769,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
 
         hw.log("SYS", "State: IDLE")
         hw.set_in_progress(False) # Turn off orange light
+        hw.set_door_lock(True)    # Lock door while idle
 
         # Initial check for full storage capacity (disabled to keep start button active)
         # is_full = hw.is_bin_full()
@@ -925,6 +949,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             current_screen = "READY"
 
             hw.log("MECH", "Unlocking Safety Door...")
+            hw.set_door_lock(False)
             hw.log("MECH", "Door Unlocked.")
 
             hw.log("SYS", "Waiting for bottle insertion (Hardware Sensor or UI Simulator)...")
@@ -949,8 +974,10 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                             break
                         time.sleep(0.1)
                         
-                    hw.display_ui("Door Closed. Processing...", "DOOR_CLOSED")
-                    hw.log("SYS", "Dispenser door closed. Proceeding to verification.")
+                    hw.log("MECH", "Locking Safety Door...")
+                    hw.set_door_lock(True) # Lock before verifying
+                    hw.display_ui("Door Locked. Processing...", "DOOR_CLOSED")
+                    hw.log("SYS", "Dispenser door closed & locked. Proceeding to verification.")
                     user_inserted = True
                     break
                 
@@ -981,7 +1008,6 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             hw.display_ui("Processing...", "BOTTLE_INSERTED")
             current_screen = "VERIFYING"
             hw.check_door_safety(current_screen)
-            hw.log("MECH", "Locking Safety Door...")
             hw.log("SCALE", "Taring scale...")
             hw.log("PROC", "Analyzing object in chute...")
             
@@ -1000,6 +1026,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 current_screen = "REJECTED"
                 hw.check_door_safety(current_screen)
                 hw.log("MECH", "Unlocking door for removal...")
+                hw.set_door_lock(False)
                 
                 # Wait for user to decide to try again or finish (Req 4.1, 4.2, 4.3, 4.6)
                 hw.log("SYS", "Waiting for user action on rejection screen...")
