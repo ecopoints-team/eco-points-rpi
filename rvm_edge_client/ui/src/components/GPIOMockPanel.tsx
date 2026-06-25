@@ -137,6 +137,12 @@ export default function GPIOMockPanel() {
       {/* Inputs Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Inputs (Sensors)</Text>
+        <TouchableOpacity style={styles.button} onPress={toggleDoor}>
+          <Text style={styles.buttonText}>
+            GPIO 11 - Door Switch: {isDoorOpen ? 'OPEN' : 'CLOSED'}
+          </Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.button} onPress={toggleBin}>
           <Text style={styles.buttonText}>
             GPIO 5 - Curtain: {payload.isBinFull ? 'FULL' : 'OK'}

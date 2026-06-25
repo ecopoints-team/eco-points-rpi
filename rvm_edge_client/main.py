@@ -68,8 +68,7 @@ else:
 PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
 PIN_STROBE       = 22  # BCM 22 — Strobe light
 PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
-# PIN_DOOR_OPEN    = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23) - Note: Now used as Door Lock Output
-PIN_DOOR_LOCK    = 11  # BCM 11 - Door Lock (Output)
+PIN_DOOR_OPEN    = 11  # Door Open Sensor (Input)
 
 # --- POINTS CONFIGURATION ---
 # (Using local size mapping logic)
@@ -225,20 +224,19 @@ class HardwareInterface:
         try:
             GPIO.setmode(GPIO.BCM)
 
-            # Motor outputs — safe initial states (Req 5.2, 5.6)
-            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=MOTOR_ENABLE_DISABLE)
+            # Motor outputs — keep motor enabled to hold torque and prevent platform from dropping!
+            GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=MOTOR_ENABLE_ACTIVE)
             GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
             GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (active-LOW)
-            GPIO.setup(PIN_DOOR_LOCK,    GPIO.OUT, initial=GPIO.LOW)   # lock output
 
             # Homing sensor — input with pull-up (LOW = home position reached)
             GPIO.setup(PIN_MOTOR_HOME,   GPIO.IN,  pull_up_down=GPIO.PUD_UP)
 
             # Existing sensor/indicator pins
             GPIO.setup(PIN_BIN_FULL,     GPIO.IN,  pull_up_down=GPIO.PUD_UP)
-            # Door open sensor removed as pin 11 is now door lock output
+            GPIO.setup(PIN_DOOR_OPEN,    GPIO.IN,  pull_up_down=GPIO.PUD_UP) # Pull-up since their sensor connects to GND
 
             # Red Fault LED is wired ACTIVE-LOW (cathode → GPIO 27, anode → 3.3V).
             # HIGH = LED OFF, LOW = LED ON. Initial state: HIGH (OFF).
@@ -255,7 +253,6 @@ class HardwareInterface:
             GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)   # disable driver (Req 5.7)
             GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
             GPIO.output(PIN_STROBE,       GPIO.HIGH)  # strobe off (active-LOW)
-            GPIO.output(PIN_DOOR_LOCK,    GPIO.LOW)   # release door lock
             # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
             GPIO.output(PIN_FAULT_LED,    GPIO.HIGH)
         except Exception:
@@ -352,8 +349,13 @@ class HardwareInterface:
         return self._bin_full_confirmed
 
     def is_door_open(self) -> bool:
-        # Door open sensor removed, return False
-        return False
+        if not self.gpio_available:
+            return False
+        try:
+            # PUD_UP is used, so LOW = Triggered (Door Open)
+            return GPIO.input(PIN_DOOR_OPEN) == GPIO.LOW
+        except Exception:
+            return False
 
     def check_door_safety(self, current_screen: str):
         pass
@@ -457,9 +459,6 @@ class HardwareInterface:
             self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
         except Exception as e:
             self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
-        finally:
-            # Disable motor
-            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
 
     def test_pulse_motor(self, steps: int, direction: int) -> None:
         """Runs a manual motor pulse test from the UI."""
@@ -480,8 +479,6 @@ class HardwareInterface:
             self.log("MOTOR", "Test pulse complete.")
         except Exception as e:
             self.log("MOTOR_ERR", f"Error during test pulse: {e}")
-        finally:
-            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
 
     def home_motor(self) -> None:
         """Forces the motor to return to the home (raised) position."""
@@ -508,8 +505,6 @@ class HardwareInterface:
                 self.log("MOTOR", "Homing complete.")
         except Exception as e:
             self.log("MOTOR_ERR", f"GPIO error during home_motor: {e}")
-        finally:
-            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
 
     def set_in_progress(self, active: bool):
         if not self.gpio_available:
