@@ -104,16 +104,28 @@ def pulse_motor():
         print("Motor driver disabled.")
 
 def full_cycle_test():
-    print("\n--- Full Dispense Cycle Test (Drop then Home) ---")
+    print("\n--- Full Dispense Cycle Test ---")
     steps = input("Enter number of steps to drop (default 1250): ")
     try:
         steps = int(steps) if steps.strip() else 1250
     except ValueError:
         steps = 1250
 
-    print(f"1. Enabling motor driver and dropping platform ({steps} steps, DIR=LOW)...")
     try:
         GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
+        
+        print("0. INITIAL SETUP: Raising platform (DIR=HIGH) to ensure it starts in default raised position...")
+        GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
+        time.sleep(0.1)
+        for i in range(steps):
+            GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+            time.sleep(0.002)
+            GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+            time.sleep(0.002)
+        print("Platform is now raised. Waiting 2 seconds before dropping...")
+        time.sleep(2)
+
+        print(f"1. Enabling motor driver and dropping platform ({steps} steps, DIR=LOW)...")
         GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
         time.sleep(0.1)
 
