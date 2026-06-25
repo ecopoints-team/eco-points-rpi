@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useKiosk } from '../context/KioskContext';
+import { sendGPIOEvent } from '../hooks/useGPIOBridge';
 import { Colors, Fonts, FontSizes, Spacing } from '../constants/theme';
 
 export default function GPIOMockPanel() {
@@ -15,8 +16,8 @@ export default function GPIOMockPanel() {
   const isStrobeOn = screen === 'VERIFYING';
   
   // Orange is only when a user is in a session
-  const sessionStates = ['QR_SCAN', 'READY', 'VERIFYING', 'ACCEPTED', 'REJECTED', 'THANK_YOU'];
-  const isInProgressOn = sessionStates.includes(screen);
+  // Note: Disabled because the real machine's IN_PROGRESS pin is also disabled/unwired
+  const isInProgressOn = false;
   
   // Fault turns on for bin full or door open
   const isFaultOn = payload.isBinFull || screen === 'BIN_FULL_DENIED' || isDoorOpen;
@@ -53,6 +54,13 @@ export default function GPIOMockPanel() {
     platformAngle.value = withTiming(targetAngle, {
       duration,
       easing: Easing.inOut(Easing.ease)
+    });
+
+    // Also send an event to the Python backend to pulse the real motor if connected
+    sendGPIOEvent({
+      action: 'TEST_PULSE_MOTOR',
+      steps,
+      direction: isForward ? 1 : 0
     });
 
     // Update homing sensor after duration
@@ -126,8 +134,9 @@ export default function GPIOMockPanel() {
       {/* Outputs Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Outputs (Indicators)</Text>
+        <Indicator label="Door Lock (Software)" isOn={!isDoorOpen} color="#3b82f6" />
         <Indicator label="GPIO 27 - Fault (Red)" isOn={isFaultOn} color="#ef4444" />
-        <Indicator label="GPIO 26 - In Progress (Orange)" isOn={isInProgressOn} color="#f97316" />
+        <Indicator label="GPIO 26 - In Progress (Disabled)" isOn={isInProgressOn} color="#f97316" />
         <Indicator label="GPIO 22 - Strobe (White)" isOn={isStrobeOn} color="#ffffff" />
       </View>
 

@@ -108,7 +108,14 @@ class UIBridge:
             async for message in websocket:
                 try:
                     data = json.loads(message)
-                    self.queue.put(data)
+                    if data.get("action") == "TEST_PULSE_MOTOR":
+                        steps = data.get("steps", 200)
+                        direction = data.get("direction", 1)
+                        # We use a global helper to trigger the test pulse
+                        if "test_pulse_motor_callback" in globals():
+                            threading.Thread(target=globals()["test_pulse_motor_callback"], args=(steps, direction), daemon=True).start()
+                    else:
+                        self.queue.put(data)
                 except json.JSONDecodeError:
                     self.queue.put({"action": message})
         except websockets.exceptions.ConnectionClosed:
@@ -166,6 +173,9 @@ class HardwareInterface:
         self._setup_gpio()
         self._setup_cv()
         self._start_bin_monitor()
+        
+        # Register callback for UI test pulse
+        globals()["test_pulse_motor_callback"] = self.test_pulse_motor
 
     def log(self, system, message):
         """Prints formatted logs like a real system terminal."""
@@ -422,31 +432,55 @@ class HardwareInterface:
             # Open Sequence
             self.log("MOTOR", "Opening dispenser...")
             GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
+            time.sleep(0.1) # Wait for driver to register direction
             for _ in range(steps):
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
-                time.sleep(0.001)
+                time.sleep(0.002)
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
-                time.sleep(0.001)
+                time.sleep(0.002)
             
             time.sleep(0.5) # Wait for bottle to drop
             
             # Close Sequence (Home)
             self.log("MOTOR", "Homing dispenser...")
             GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
+            time.sleep(0.1)
             
             timeout = time.time() + 10.0
             # Assuming home sensor is pulled up and shorts to ground (LOW) when closed
             while GPIO.input(PIN_MOTOR_HOME) != GPIO.LOW and time.time() < timeout:
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
-                time.sleep(0.001)
+                time.sleep(0.002)
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
-                time.sleep(0.001)
+                time.sleep(0.002)
                 
             self.log("MOTOR", "Sorting complete. Actuator returned to idle.")
         except Exception as e:
             self.log("MOTOR_ERR", f"GPIO error during spin_motor: {e}")
         finally:
             # Disable motor
+            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
+
+    def test_pulse_motor(self, steps: int, direction: int) -> None:
+        """Runs a manual motor pulse test from the UI."""
+        if not self.gpio_available:
+            self.log("MOTOR", "[SIMULATION] Test pulse requested.")
+            return
+            
+        self.log("MOTOR", f"Test pulse: {steps} steps, dir {direction}...")
+        try:
+            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_ACTIVE)
+            GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH if direction == 1 else GPIO.LOW)
+            time.sleep(0.1)
+            for _ in range(steps):
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+                time.sleep(0.002)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+                time.sleep(0.002)
+            self.log("MOTOR", "Test pulse complete.")
+        except Exception as e:
+            self.log("MOTOR_ERR", f"Error during test pulse: {e}")
+        finally:
             GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
 
     def _open_camera(self):
