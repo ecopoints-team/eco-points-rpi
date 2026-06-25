@@ -67,7 +67,7 @@ else:
 # Light Indicators
 PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
 PIN_STROBE       = 22  # BCM 22 — Strobe light
-# PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
+PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
 # PIN_DOOR_OPEN    = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23) - Note: Now used as Door Lock Output
 PIN_DOOR_LOCK    = 11  # BCM 11 - Door Lock (Output)
 
