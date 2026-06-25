@@ -367,24 +367,16 @@ class HardwareInterface:
         GPIO.output(PIN_DOOR_LOCK, GPIO.HIGH if locked else GPIO.LOW)
 
     def check_door_safety(self, current_screen: str):
-        pass
-        # if self.is_door_open():
-        #     if current_screen == "READY":
-        #         self.display_ui("Door Open. Please close the door to proceed.", "SET_DOOR_OPEN")
-        #         self.log("MECH", "Safety door open detected. Suspending...")
-        #         while self.is_door_open():
-        #             if not ui_bridge.clients:
-        #                 break
-        #             time.sleep(0.5)
-        #         self.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
-        #         self.log("MECH", "Safety door closed. Resuming...")
-        #     else:
-        #         self.log("MECH", "Safety door open detected. Suspending session...")
-        #         while self.is_door_open():
-        #             if not ui_bridge.clients:
-        #                 break
-        #             time.sleep(0.5)
-        #         self.log("MECH", "Safety door closed. Resuming session...")
+        if self.is_door_open():
+            if current_screen == "READY":
+                self.log("MECH", "Safety door open detected before transaction. Suspending...")
+                self.display_ui("Please close the door to start.", "SET_DOOR_OPEN")
+                while self.is_door_open():
+                    if not ui_bridge.clients:
+                        break
+                    time.sleep(0.5)
+                self.display_ui("Door Closed. Locking...", "DOOR_CLOSED")
+                self.log("MECH", "Safety door closed. Resuming...")
 
     def display_ui(self, text, event=None, data=None):
         """Simulates sending text to the LCD screen and broadcasts to WebSocket."""
