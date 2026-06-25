@@ -102,6 +102,51 @@ def pulse_motor():
         GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
         print("Motor driver disabled.")
 
+def full_cycle_test():
+    print("\n--- Full Dispense Cycle Test (Drop then Home) ---")
+    steps = input("Enter number of steps to drop (default 1250): ")
+    try:
+        steps = int(steps) if steps.strip() else 1250
+    except ValueError:
+        steps = 1250
+
+    print(f"1. Enabling motor driver and dropping platform ({steps} steps, DIR=HIGH)...")
+    try:
+        GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
+        GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
+        time.sleep(0.1)
+
+        for i in range(steps):
+            GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+            time.sleep(0.002)
+            GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+            time.sleep(0.002)
+
+        print("Platform dropped. Waiting 1 second...")
+        time.sleep(1)
+
+        print("2. Raising platform (DIR=LOW) until Homing Sensor (Pin 6) triggers...")
+        GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
+        time.sleep(0.1)
+        
+        timeout = time.time() + 10.0
+        while GPIO.input(PIN_MOTOR_HOME) != GPIO.LOW and time.time() < timeout:
+            GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+            time.sleep(0.002)
+            GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+            time.sleep(0.002)
+            
+        if time.time() >= timeout:
+            print("WARNING: Homing timeout reached! Sensor was never triggered.")
+        else:
+            print("Homing complete! Platform is raised.")
+            
+    except Exception as e:
+        print(f"Error during cycle test: {e}")
+    finally:
+        GPIO.output(PIN_MOTOR_ENABLE, GPIO.HIGH)
+        print("Motor driver disabled.")
+
 def main():
     try:
         setup_gpios()
@@ -119,7 +164,8 @@ def main():
         print("2) Toggle Red LED (Pin 27 - Active LOW)")
         print("3) Toggle Orange LED (Pin 26 - Active LOW)")
         print("4) Toggle Strobe Light (Pin 22 - Active LOW)")
-        print("5) Stepper Motor Pulse Test (Pin 12 pulse, 16 dir, 17 enable)")
+        print("5) Raw Stepper Motor Pulse Test (Manual Steps & Direction)")
+        print("6) Full Dispense Cycle Test (Drop then Home/Raise automatically)")
         print("q) Quit and Clean Up GPIOs")
         
         choice = input("\nEnter choice: ").strip().lower()
@@ -134,6 +180,8 @@ def main():
             toggle_output(PIN_STROBE, "Strobe Light")
         elif choice == '5':
             pulse_motor()
+        elif choice == '6':
+            full_cycle_test()
         elif choice == 'q':
             print("\nCleaning up GPIO pins and exiting...")
             GPIO.cleanup()
