@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import DevPanel from './src/components/DevPanel';
+import GPIOMockPanel from './src/components/GPIOMockPanel';
 import LightIndicator from './src/components/LightIndicator';
 import {
   useFonts,
@@ -58,10 +59,13 @@ function KioskRouter() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
-      {ActiveScreen}
-      {/* <LightIndicator /> */}
-      {DEV_MODE && <DevPanel />}
+    <View style={{ flex: 1, flexDirection: 'row' }}>
+      <View style={{ flex: 1 }}>
+        {ActiveScreen}
+        {/* <LightIndicator /> */}
+        {DEV_MODE && <DevPanel />}
+      </View>
+      {DEV_MODE && <GPIOMockPanel />}
     </View>
   );
 }
