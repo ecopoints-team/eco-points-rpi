@@ -939,13 +939,12 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
                 # Check for safety door status
                 hw.check_door_safety(current_screen)
                 
-                # Check for live door openings via Homing Sensor (Dispenser Door)
-                # HIGH = off home position = door open
-                if hw.gpio_available and GPIO and GPIO.input(PIN_MOTOR_HOME) == GPIO.HIGH:
+                # Check for live door openings via the actual Door Sensor (Pin 11)
+                if hw.is_door_open():
                     hw.display_ui("Door Open. Please insert bottle.", "SET_DOOR_OPEN")
                     hw.log("MECH", "Dispenser door opened by user!")
                     
-                    while GPIO.input(PIN_MOTOR_HOME) == GPIO.HIGH:
+                    while hw.is_door_open():
                         if not ui_bridge.clients:
                             break
                         time.sleep(0.1)
