@@ -6,6 +6,9 @@ const WS_URL = 'ws://localhost:8765';
 // Set to false to enable WS connection with Python main.py
 export const DEV_MODE = process.env.EXPO_PUBLIC_DEV_MODE === 'true';
 
+// Set to true to show the development and mock panels regardless of DEV_MODE
+export const SHOW_DEV_PANELS = process.env.EXPO_PUBLIC_SHOW_DEV_PANELS === 'true' || DEV_MODE;
+
 type GPIOEventPayload = {
   event: string;
   userName?: string;

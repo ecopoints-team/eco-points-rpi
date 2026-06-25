@@ -16,7 +16,7 @@ import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 
 import { KioskProvider, useKiosk } from './src/context/KioskContext';
 import { useKioskTimer } from './src/hooks/useKioskTimer';
-import { DEV_MODE, useGPIOBridge } from './src/hooks/useGPIOBridge';
+import { DEV_MODE, SHOW_DEV_PANELS, useGPIOBridge } from './src/hooks/useGPIOBridge';
 
 import StartScreen from './src/screens/StartScreen';
 import QRScanScreen from './src/screens/QRScanScreen';
@@ -63,9 +63,9 @@ function KioskRouter() {
       <View style={{ flex: 1 }}>
         {ActiveScreen}
         {/* <LightIndicator /> */}
-        {DEV_MODE && <DevPanel />}
+        {SHOW_DEV_PANELS && <DevPanel />}
       </View>
-      {DEV_MODE && <GPIOMockPanel />}
+      {SHOW_DEV_PANELS && <GPIOMockPanel />}
     </View>
   );
 }
