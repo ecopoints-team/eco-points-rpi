@@ -46,10 +46,10 @@ export default function GPIOMockPanel() {
     // Simulate duration based on steps (e.g. 1000 steps = 1000ms)
     const duration = Math.min(steps * 2, 3000); 
 
-    // Animate angle
-    // If forward (raise), angle goes to -90 (horizontal)
-    // If backward (drop), angle goes to 0 (vertical)
-    const targetAngle = isForward ? -90 : 0;
+    // Animate angle relatively so it spins continuously
+    // A forward pulse of 1250 steps is roughly a 90 degree turn
+    const degreesToTurn = (steps / 1250) * 90;
+    const targetAngle = platformAngle.value + (isForward ? -degreesToTurn : degreesToTurn);
     
     platformAngle.value = withTiming(targetAngle, {
       duration,
@@ -72,17 +72,17 @@ export default function GPIOMockPanel() {
   // Listen to screen changes to automatically drop and raise the platform on successful verification
   useEffect(() => {
     if (screen === 'ACCEPTED' && previousScreen.current === 'VERIFYING') {
-      // Drop the platform (go to 0 deg, vertical)
-      platformAngle.value = withTiming(0, {
+      // Drop the platform (rotate 90 degrees)
+      platformAngle.value = withTiming(platformAngle.value + 90, {
         duration: 1000,
         easing: Easing.inOut(Easing.ease),
       });
       setTimeout(() => {
         setHomingSensor(false); // false = dropped
         
-        // Briefly stay dropped, then raise the platform again
+        // Briefly stay dropped, then raise the platform again (rotate -90 degrees)
         setTimeout(() => {
-          platformAngle.value = withTiming(-90, {
+          platformAngle.value = withTiming(platformAngle.value - 90, {
             duration: 1000,
             easing: Easing.inOut(Easing.ease),
           });
@@ -91,15 +91,9 @@ export default function GPIOMockPanel() {
           }, 1000);
         }, 1500);
       }, 1000);
-    } else if (screen === 'READY' || screen === 'START') {
-      // Ensure the platform is raised for the next session/bottle (go to -90 deg, horizontal)
-      platformAngle.value = withTiming(-90, {
-        duration: 1000,
-        easing: Easing.inOut(Easing.ease),
-      });
-      setTimeout(() => {
-        setHomingSensor(true); // true = raised
-      }, 1000);
+    } else if (screen === 'READY' && previousScreen.current !== 'READY') {
+      // Make sure homing sensor shows raised when ready
+      setHomingSensor(true);
     }
     previousScreen.current = screen;
   }, [screen]);
