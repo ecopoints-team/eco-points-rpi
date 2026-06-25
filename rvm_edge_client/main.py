@@ -429,9 +429,9 @@ class HardwareInterface:
             # Enable motor
             GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_ACTIVE)
             
-            # Open Sequence
-            self.log("MOTOR", "Opening dispenser...")
-            GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
+            # Open Sequence (Drop)
+            self.log("MOTOR", "Opening dispenser (dropping)...")
+            GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
             time.sleep(0.1) # Wait for driver to register direction
             for _ in range(steps):
                 GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
@@ -441,9 +441,9 @@ class HardwareInterface:
             
             time.sleep(0.5) # Wait for bottle to drop
             
-            # Close Sequence (Home)
-            self.log("MOTOR", "Homing dispenser...")
-            GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
+            # Close Sequence (Home / Raise)
+            self.log("MOTOR", "Homing dispenser (raising)...")
+            GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
             time.sleep(0.1)
             
             timeout = time.time() + 10.0
@@ -491,7 +491,8 @@ class HardwareInterface:
         self.log("MOTOR", "Homing dispenser to initial raised position...")
         try:
             GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_ACTIVE)
-            GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
+            # DIR=HIGH raises the platform
+            GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
             time.sleep(0.1)
             
             timeout = time.time() + 10.0

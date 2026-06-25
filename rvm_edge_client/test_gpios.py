@@ -20,7 +20,8 @@ def setup_gpios():
     # Setup Inputs
     GPIO.setup(PIN_MOTOR_HOME, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO.setup(PIN_BIN_FULL,   GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(PIN_DOOR_OPEN,  GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    # Try PUD_UP for the door sensor in case the physical switch is wired to Ground (NC/NO to GND)
+    GPIO.setup(PIN_DOOR_OPEN,  GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     # Setup Outputs (default HIGH / OFF)
     GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=GPIO.HIGH)
@@ -45,7 +46,7 @@ def test_inputs_loop():
             states = {
                 "Homing Sensor (Pin 6)": "LOW / TRIGGERED (GND)" if home_val == GPIO.LOW else "HIGH / UNTRIGGERED",
                 "Bin Full Sensor (Pin 5)": "HIGH / BLOCKED (FULL)" if bin_val == GPIO.HIGH else "LOW / CLEAR",
-                "Door Open Sensor (Pin 11)": "HIGH / OPEN" if door_val == GPIO.HIGH else "LOW / CLOSED"
+                "Door Open Sensor (Pin 11)": "LOW / TRIGGERED" if door_val == GPIO.LOW else "HIGH / UNTRIGGERED"
             }
             
             # Print only on state changes to avoid flooding the screen
@@ -110,10 +111,10 @@ def full_cycle_test():
     except ValueError:
         steps = 1250
 
-    print(f"1. Enabling motor driver and dropping platform ({steps} steps, DIR=HIGH)...")
+    print(f"1. Enabling motor driver and dropping platform ({steps} steps, DIR=LOW)...")
     try:
         GPIO.output(PIN_MOTOR_ENABLE, GPIO.LOW)
-        GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
+        GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
         time.sleep(0.1)
 
         for i in range(steps):
@@ -125,8 +126,8 @@ def full_cycle_test():
         print("Platform dropped. Waiting 1 second...")
         time.sleep(1)
 
-        print("2. Raising platform (DIR=LOW) until Homing Sensor (Pin 6) triggers...")
-        GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
+        print("2. Raising platform (DIR=HIGH) until Homing Sensor (Pin 6) triggers...")
+        GPIO.output(PIN_MOTOR_DIR, GPIO.HIGH)
         time.sleep(0.1)
         
         timeout = time.time() + 10.0
