@@ -64,10 +64,12 @@ if GPIO:
 else:
     MOTOR_ENABLE_ACTIVE = 0
     MOTOR_ENABLE_DISABLE = 1
-# PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
+# Light Indicators
+PIN_IN_PROGRESS  = 26  # BCM 26 — In Progress indicator, active-LOW
 PIN_STROBE       = 22  # BCM 22 — Strobe light
-PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
-PIN_DOOR_OPEN    = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23)
+# PIN_BIN_FULL     = 5   # HIGH while bin-full sensor is triggered (BCM 5 / Pin 29)
+# PIN_DOOR_OPEN    = 11  # HIGH while door-open sensor is triggered (BCM 11 / Pin 23) - Note: Now used as Door Lock Output
+PIN_DOOR_LOCK    = 11  # BCM 11 - Door Lock (Output)
 
 # --- POINTS CONFIGURATION ---
 # (Using local size mapping logic)
@@ -227,15 +229,16 @@ class HardwareInterface:
             GPIO.setup(PIN_MOTOR_ENABLE, GPIO.OUT, initial=MOTOR_ENABLE_DISABLE)
             GPIO.setup(PIN_MOTOR_PULSE,  GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(PIN_MOTOR_DIR,    GPIO.OUT, initial=GPIO.LOW)
-            # GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
-            GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (assuming active-LOW like others)
+            GPIO.setup(PIN_IN_PROGRESS,  GPIO.OUT, initial=GPIO.HIGH)  # indicator off (active-LOW)
+            GPIO.setup(PIN_STROBE,       GPIO.OUT, initial=GPIO.HIGH)  # strobe off (active-LOW)
+            GPIO.setup(PIN_DOOR_LOCK,    GPIO.OUT, initial=GPIO.LOW)   # lock output
 
             # Homing sensor — input with pull-up (LOW = home position reached)
             GPIO.setup(PIN_MOTOR_HOME,   GPIO.IN,  pull_up_down=GPIO.PUD_UP)
 
             # Existing sensor/indicator pins
             GPIO.setup(PIN_BIN_FULL,     GPIO.IN,  pull_up_down=GPIO.PUD_UP)
-            GPIO.setup(PIN_DOOR_OPEN,    GPIO.IN,  pull_up_down=GPIO.PUD_DOWN)
+            # Door open sensor removed as pin 11 is now door lock output
 
             # Red Fault LED is wired ACTIVE-LOW (cathode → GPIO 27, anode → 3.3V).
             # HIGH = LED OFF, LOW = LED ON. Initial state: HIGH (OFF).
@@ -250,8 +253,9 @@ class HardwareInterface:
             return
         try:
             GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)   # disable driver (Req 5.7)
-            # GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
+            GPIO.output(PIN_IN_PROGRESS,  GPIO.HIGH)  # indicator off (Req 5.7)
             GPIO.output(PIN_STROBE,       GPIO.HIGH)  # strobe off (active-LOW)
+            GPIO.output(PIN_DOOR_LOCK,    GPIO.LOW)   # release door lock
             # Drive Fault LED HIGH (OFF) before cleanup reverts it to floating INPUT mode.
             GPIO.output(PIN_FAULT_LED,    GPIO.HIGH)
         except Exception:
@@ -348,12 +352,8 @@ class HardwareInterface:
         return self._bin_full_confirmed
 
     def is_door_open(self) -> bool:
-        if not self.gpio_available:
-            return False
-        try:
-            return GPIO.input(PIN_DOOR_OPEN) == GPIO.HIGH
-        except Exception:
-            return False
+        # Door open sensor removed, return False
+        return False
 
     def check_door_safety(self, current_screen: str):
         pass
@@ -482,6 +482,39 @@ class HardwareInterface:
             self.log("MOTOR_ERR", f"Error during test pulse: {e}")
         finally:
             GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
+
+    def home_motor(self) -> None:
+        """Forces the motor to return to the home (raised) position."""
+        if not self.gpio_available:
+            return
+            
+        self.log("MOTOR", "Homing dispenser to initial raised position...")
+        try:
+            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_ACTIVE)
+            GPIO.output(PIN_MOTOR_DIR, GPIO.LOW)
+            time.sleep(0.1)
+            
+            timeout = time.time() + 10.0
+            while GPIO.input(PIN_MOTOR_HOME) != GPIO.LOW and time.time() < timeout:
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.HIGH)
+                time.sleep(0.002)
+                GPIO.output(PIN_MOTOR_PULSE, GPIO.LOW)
+                time.sleep(0.002)
+                
+            if time.time() >= timeout:
+                self.log("MOTOR_WARN", "Homing timeout reached!")
+            else:
+                self.log("MOTOR", "Homing complete.")
+        except Exception as e:
+            self.log("MOTOR_ERR", f"GPIO error during home_motor: {e}")
+        finally:
+            GPIO.output(PIN_MOTOR_ENABLE, MOTOR_ENABLE_DISABLE)
+
+    def set_in_progress(self, active: bool):
+        if not self.gpio_available:
+            return
+        # Active LOW (LOW = ON, HIGH = OFF)
+        GPIO.output(PIN_IN_PROGRESS, GPIO.LOW if active else GPIO.HIGH)
 
     def _open_camera(self):
         """
@@ -687,6 +720,9 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
     global physical_bottle_inserted
     
     hw.boot_sequence()
+    # Home the motor on boot so platform is raised by default
+    hw.home_motor()
+    
     start_heartbeat_thread(hw)
 
     # --- IDENTIFY: Skip cloud identify for local point system ---
@@ -713,6 +749,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
             hw.log("SYS", "Kiosk UI client connected! Starting session...")
 
         hw.log("SYS", "State: IDLE")
+        hw.set_in_progress(False) # Turn off orange light
 
         # Initial check for full storage capacity (disabled to keep start button active)
         # is_full = hw.is_bin_full()
@@ -761,6 +798,7 @@ def run_ecopoints_firmware(hw: "HardwareInterface"):
         hw.log("NET", "Ping sent to wake backend server...")
 
         # --- STATE: QR SCANNING ---
+        hw.set_in_progress(True) # Turn on orange light during active session
         hw.set_scanner_power(True)
         time.sleep(1.5)  # Give USB scanner time to boot
         

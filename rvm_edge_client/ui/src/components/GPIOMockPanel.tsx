@@ -16,8 +16,8 @@ export default function GPIOMockPanel() {
   const isStrobeOn = screen === 'VERIFYING';
   
   // Orange is only when a user is in a session
-  // Note: Disabled because the real machine's IN_PROGRESS pin is also disabled/unwired
-  const isInProgressOn = false;
+  const sessionStates = ['QR_SCAN', 'READY', 'VERIFYING', 'ACCEPTED', 'REJECTED', 'THANK_YOU'];
+  const isInProgressOn = sessionStates.includes(screen);
   
   // Fault turns on for bin full or door open
   const isFaultOn = payload.isBinFull || screen === 'BIN_FULL_DENIED' || isDoorOpen;
@@ -134,21 +134,15 @@ export default function GPIOMockPanel() {
       {/* Outputs Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Outputs (Indicators)</Text>
-        <Indicator label="Door Lock (Software)" isOn={!isDoorOpen} color="#3b82f6" />
+        <Indicator label="GPIO 11 - Door Lock" isOn={!isDoorOpen} color="#3b82f6" />
         <Indicator label="GPIO 27 - Fault (Red)" isOn={isFaultOn} color="#ef4444" />
-        <Indicator label="GPIO 26 - In Progress (Disabled)" isOn={isInProgressOn} color="#f97316" />
+        <Indicator label="GPIO 26 - In Progress (Orange)" isOn={isInProgressOn} color="#f97316" />
         <Indicator label="GPIO 22 - Strobe (White)" isOn={isStrobeOn} color="#ffffff" />
       </View>
 
       {/* Inputs Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Inputs (Sensors)</Text>
-        <TouchableOpacity style={styles.button} onPress={toggleDoor}>
-          <Text style={styles.buttonText}>
-            GPIO 11 - Door Switch: {isDoorOpen ? 'OPEN' : 'CLOSED'}
-          </Text>
-        </TouchableOpacity>
-
         <TouchableOpacity style={styles.button} onPress={toggleBin}>
           <Text style={styles.buttonText}>
             GPIO 5 - Curtain: {payload.isBinFull ? 'FULL' : 'OK'}
